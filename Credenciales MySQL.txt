@@ -1,0 +1,7 @@
+Credenciales MySQL 
+
+root:  
+admin123
+
+user develop
+pasw admin123
