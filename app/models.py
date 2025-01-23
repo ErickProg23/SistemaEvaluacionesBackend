@@ -36,12 +36,17 @@ class Empleado(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nombre = db.Column(db.String(255), nullable=False)
-    area = db.Column(db.String(70), nullable=False)
+    puesto = db.Column(db.String(255), nullable=False)
+    evaluador_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=True)  # Relación con 'encargado'
+    num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
 
+     # Relación con el modelo Encargado
+    evaluador = db.relationship('Encargado', backref='empleados')
+
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Area{self.area}, Activo{self.activo}>"
+        return f"<Nombre {self.nombre}, Puesto{self.area}, Activo{self.activo}, Evaluador {self.evaluador_id}>"
     
 
 class Encargado(db.Model):
@@ -54,7 +59,7 @@ class Encargado(db.Model):
     activo = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Area{self.area}, Activo{self.activo}>"
+        return f"<ID {self.id}, Nombre {self.nombre}, Area{self.area}, Activo{self.activo}>"
     
 
 class Pregunta(db.Model):
