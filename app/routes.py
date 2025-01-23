@@ -57,7 +57,7 @@ def get_encargados():
     else:
         return jsonify({'message': 'No se pudo extraer la informacion'}), 401
 
-@routes_blueprint.route('usuarios/empleados/<int:id>', methods=['OPTIONS', 'PUT'])
+@routes_blueprint.route('/usuarios/empleados/desactivar/<int:id>', methods=['OPTIONS', 'PUT'])
 def deactivate_employee(id):    
     # Manejo del método PUT
     empleado = Empleado.query.get(id)
@@ -67,3 +67,50 @@ def deactivate_employee(id):
     empleado.activo = False
     db.session.commit()
     return jsonify({'message': 'Empleado desactivado correctamente'})
+
+@routes_blueprint.route('/empleados/nuevo/<int:id>', methods=['OPTIONS', 'POST'])
+def new_employee(id):
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'OK'}), 200
+
+    encargado = Encargado.query.get(id)
+    if not encargado:
+        return jsonify({'error': 'Encargado no encontrado'}), 404
+
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se recibio datos'}), 400
+
+    nombre = data.get('nombre')
+    puesto = data.get('puesto')
+    num_empleado = data.get('num_empleado')
+    evaluador_id = data.get('evaluador_id')
+
+    if not nombre or not puesto or not num_empleado:
+        return jsonify({'error': 'Faltan datos'}), 400
+
+    try:
+        nuevo_empleado = Empleado(
+            nombre=nombre,
+            puesto=puesto,
+            num_empleado=num_empleado,
+            evaluador_id=evaluador_id
+        )
+        db.session.add(nuevo_empleado)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Empleado creado correctamente',
+            'empleado': {
+                'id': nuevo_empleado.id,
+                'nombre': nuevo_empleado.nombre,
+                'puesto': nuevo_empleado.puesto,
+                'num_empleado': nuevo_empleado.num_empleado,
+                'evaluador': nuevo_empleado.evaluador_id
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error':'Error al crear el empleado', 'mensaje': str(e)}), 500
+
