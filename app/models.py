@@ -16,7 +16,7 @@ class Usuario(db.Model):
     rol = db.relationship('Rol', backref=db.backref('usuarios', lazy=True))
 
     def __repr__(self):
-        return f"<Usuario {self.nombre}, Correo {self.correo}, Rol {self.rol_id}>"
+        return f"<Nombre {self.nombre}, Correo {self.correo}, Rol {self.rol_id}>"
     
 
 class Rol(db.Model):
@@ -37,16 +37,18 @@ class Empleado(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nombre = db.Column(db.String(255), nullable=False)
     puesto = db.Column(db.String(255), nullable=False)
-    evaluador_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=True)  # Relación con 'encargado'
+    evaluador_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=True, index=True)  # Relación con 'encargado'
+    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False, index=True) 
     num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
 
      # Relación con el modelo Encargado
     evaluador = db.relationship('Encargado', backref='empleados')
+    rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Puesto{self.area}, Activo{self.activo}, Evaluador {self.evaluador_id}>"
+        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluador {self.evaluador_id}, Rol {self.rol_id}>"
     
 
 class Encargado(db.Model):
@@ -54,12 +56,13 @@ class Encargado(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nombre = db.Column(db.String(255), nullable=False)
-    area = db.Column(db.String(70), nullable=False)
+    evaluador_id = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
+    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
 
     def __repr__(self):
-        return f"<ID {self.id}, Nombre {self.nombre}, Area{self.area}, Activo{self.activo}>"
+        return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo}, Rol {self.rol_id}>"
     
 
 class Pregunta(db.Model):

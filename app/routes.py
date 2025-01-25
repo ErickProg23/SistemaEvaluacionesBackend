@@ -18,6 +18,7 @@ def login():
     data = request.get_json()
     correo = data.get('correo')
     contrasena = data.get('contrasena')
+    nombre = data.get('nombre')
 
     # Busca al usuario en la base de datos
     usuario = Usuario.query.filter_by(correo=correo).first()
@@ -25,14 +26,22 @@ def login():
     if contrasena and usuario.contrasena == contrasena:
         # Generar un token de acceso
         access_token = create_access_token(identity={'correo': usuario.correo})
-        return jsonify({'access_token': access_token}), 200
+
+        # Recupera el rol_id del usuario
+        rol_id = usuario.rol_id  # Asegúrate de que `Usuario` tiene una columna llamada `rol_id`
+
+        nombre = usuario.nombre
+        
+        return jsonify({'access_token': access_token}
+        , {'rol_id': rol_id}
+        , {'nombre': nombre}), 200
 
     return jsonify({'message': 'Correo o contraseña incorrectos'}), 401
 
 
 @routes_blueprint.route('/usuarios/empleados', methods=['GET'])
 def get_empleados():
-    empleados = Empleado.query.all()
+    empleados = Empleado.query.filter_by(rol_id=3)
 
     # Verifica si se encontraron empleados
     if empleados:
@@ -86,6 +95,7 @@ def new_employee(id):
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     evaluador_id = data.get('evaluador_id')
+    rol_id = data.get('rol_id', 3)
 
     if not nombre or not puesto or not num_empleado:
         return jsonify({'error': 'Faltan datos'}), 400
@@ -95,7 +105,8 @@ def new_employee(id):
             nombre=nombre,
             puesto=puesto,
             num_empleado=num_empleado,
-            evaluador_id=evaluador_id
+            evaluador_id=evaluador_id,
+            rol_id=rol_id
         )
         db.session.add(nuevo_empleado)
         db.session.commit()
@@ -107,10 +118,41 @@ def new_employee(id):
                 'nombre': nuevo_empleado.nombre,
                 'puesto': nuevo_empleado.puesto,
                 'num_empleado': nuevo_empleado.num_empleado,
-                'evaluador': nuevo_empleado.evaluador_id
+                'evaluador': nuevo_empleado.evaluador_id,
+                'rol': nuevo_empleado.rol_id
             }
         }), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error':'Error al crear el empleado', 'mensaje': str(e)}), 500
+
+@routes_blueprint.route('/empleados/promover/<int:id>', methods=['OPTIONS', 'POST'])
+def promote_employee(id):
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'OK'}), 200
+
+    # Obtener el empleado por ID
+    empleado = Empleado.query.get(id)
+    if not empleado:
+        return jsonify({'error': 'Empleado no encontrado'}), 404
+
+    try:
+        # Cambiar el rol del empleado a 2
+        empleado.rol_id = 2
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Empleado promovido correctamente',
+            'empleado': {
+                'id': empleado.id,
+                'nombre': empleado.nombre,
+                'puesto': empleado.puesto,
+                'rol_id': empleado.rol_id  # Confirmamos el nuevo rol
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Error al promover el empleado', 'mensaje': str(e)}), 500
+
+
 
