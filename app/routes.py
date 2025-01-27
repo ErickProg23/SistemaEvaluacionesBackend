@@ -13,6 +13,7 @@ routes_blueprint = Blueprint('routes', __name__)
 def user_identity_lookup(user):
     return user  # Ajusta esto según el campo de identidad único de tu modelo de usuario
 
+#LOGIN --------------------------------------------------------------------------------------------
 @routes_blueprint.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -39,6 +40,8 @@ def login():
     return jsonify({'message': 'Correo o contraseña incorrectos'}), 401
 
 
+#OBTENER DATOS --------------------------------------------------------------------------------------------
+
 @routes_blueprint.route('/usuarios/empleados', methods=['GET'])
 def get_empleados():
     empleados = Empleado.query.filter_by(rol_id=3)
@@ -60,11 +63,28 @@ def get_encargados():
 
     if encargados:
         # Itera sobre la lista de encargados y crea un diccionario con los datos
-        encargados_data = [{'id': encargado.id, 'nombre': encargado.nombre, 'activo': encargado.activo} 
+        encargados_data = [{'id': encargado.id, 'nombre': encargado.nombre, 'activo': encargado.activo, 'puesto': encargado.puesto, 'num_empleado': encargado.num_empleado} 
                             for encargado in encargados]
         return jsonify(encargados_data), 200
     else:
         return jsonify({'message': 'No se pudo extraer la informacion'}), 401
+
+
+@routes_blueprint.route('/usuarios/empleados/<int:id>', methods=['GET'])
+def obtener_empleados(id):
+    empleados = Empleado.query.filter_by(evaluador_id=id).all()
+
+    # Verifica si se encontraron empleados
+    if empleados:
+        # Itera sobre la lista de empleados y crea un diccionario con los datos necesarios
+        empleados_data = [{'id': empleado.id, 'nombre': empleado.nombre, 
+                           'puesto': empleado.puesto, 'num_empleado': empleado.num_empleado, 'activo': empleado.activo}
+                          for empleado in empleados]
+        return jsonify(empleados_data), 200
+    else:
+        return jsonify({'message': 'No se pudo extraer la informacion'}), 401
+
+# ACTUALIZAR DATOS --------------------------------------------------------------------------------------------
 
 @routes_blueprint.route('/usuarios/empleados/desactivar/<int:id>', methods=['OPTIONS', 'PUT'])
 def deactivate_employee(id):    
@@ -76,6 +96,42 @@ def deactivate_employee(id):
     empleado.activo = False
     db.session.commit()
     return jsonify({'message': 'Empleado desactivado correctamente'})
+
+@routes_blueprint.route('/usuarios/encargados/desactivar/<int:id>', methods=['OPTIONS', 'PUT'])
+def deactivate_encargado(id):    
+    # Manejo del método PUT
+    encargado = Encargado.query.get(id)
+    if not encargado:
+        return jsonify({'error': 'Encargado no encontrado'}), 404
+    
+    encargado.activo = False
+    db.session.commit()
+    return jsonify({'message': 'Encargado desactivado correctamente'})
+
+@routes_blueprint.route('/usuarios/encargados/activar/<int:id>', methods=['OPTIONS', 'PUT'])
+def activate_encargado(id):    
+    # Manejo del método PUT
+    encargado = Encargado.query.get(id)
+    if not encargado:
+        return jsonify({'error': 'Encargado no encontrado'}), 404
+    
+    encargado.activo = True
+    db.session.commit()
+    return jsonify({'message': 'Encargado activado correctamente'})
+
+
+@routes_blueprint.route('/usuarios/empleados/activar/<int:id>', methods=['OPTIONS', 'PUT'])
+def activate_empleado(id):    
+    # Manejo del método PUT
+    empleado = Empleado.query.get(id)
+    if not empleado:
+        return jsonify({'error': 'Empledado no encontrado'}), 404
+    
+    empleado.activo = True
+    db.session.commit()
+    return jsonify({'message': 'Empleado activado correctamente'})
+
+# CREACION NUEVO EMPLEADO --------------------------------------------------------------------------------------------
 
 @routes_blueprint.route('/empleados/nuevo/<int:id>', methods=['OPTIONS', 'POST'])
 def new_employee(id):
@@ -126,6 +182,8 @@ def new_employee(id):
         db.session.rollback()
         return jsonify({'error':'Error al crear el empleado', 'mensaje': str(e)}), 500
 
+
+# PROMOVER EMPLEADOS ---------------------------------------------------------------------------------------------  
 @routes_blueprint.route('/empleados/promover/<int:id>', methods=['OPTIONS', 'POST'])
 def promote_employee(id):
     if request.method == 'OPTIONS':
