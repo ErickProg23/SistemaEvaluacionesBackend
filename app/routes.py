@@ -83,6 +83,29 @@ def obtener_empleados(id):
         return jsonify(empleados_data), 200
     else:
         return jsonify({'message': 'No se pudo extraer la informacion'}), 401
+        
+@routes_blueprint.route('/usuarios/empleado/<int:id>', methods=['GET'])
+def obtener_empleado(id):
+    # Obtiene al empleado con su evaluador
+    empleado = Empleado.query.filter_by(id=id).first()
+
+    if empleado:
+        # Construcción del resultado con la información del evaluador
+        empleado_data = {
+            'id': empleado.id,
+            'nombre': empleado.nombre,
+            'puesto': empleado.puesto,
+            'num_empleado': empleado.num_empleado,
+            'activo': empleado.activo,
+            'evaluador': {
+                'id': empleado.evaluador.id if empleado.evaluador else None,
+                'nombre': empleado.evaluador.nombre if empleado.evaluador else 'Sin encargado'
+            }
+        }
+        return jsonify(empleado_data), 200
+    else:
+        return jsonify({'message': 'No se pudo extraer la información'}), 404
+
 
 # ACTUALIZAR DATOS --------------------------------------------------------------------------------------------
 
