@@ -111,7 +111,7 @@ def get_mayores():
     usuarios = Usuario.query.filter_by(rol_id=4).all()
 
     if usuarios:
-        usuarios_data = [{'id': usuario.id, 'nombre': usuario.nombre, 'rol_id': usuario.rol_id} 
+        usuarios_data = [{'id': usuario.id, 'nombre': usuario.nombre, 'activo': usuario.activo} 
         for usuario in  usuarios]
         return jsonify(usuarios_data), 200
     else:
@@ -154,16 +154,22 @@ def obtener_encargado(id):
 
     if encargado:
         # Construcción del resultado con la información del evaluador
+        encargados_usuarios = []
+        for usuario in encargado.encargados:
+            encargados_usuarios.append({
+                'id': usuario.id,
+                'nombre': usuario.nombre
+            })
+
+    if encargado:
+        # Construcción del resultado con la información del evaluador
         encargado_data = {
             'id': encargado.id,
             'nombre': encargado.nombre,
             'puesto': encargado.puesto,
             'num_empleado': encargado.num_empleado,
             'activo': encargado.activo,
-            'evaluador': {
-                'id': encargado.evaluador.id if encargado.evaluador else None,
-                'nombre': encargado.evaluador.nombre if encargado.evaluador else 'Sin encargado'
-            }
+            'encargados': encargados_usuarios
         }
         return jsonify(encargado_data), 200
     else:
@@ -235,7 +241,7 @@ def editar_empleado(id):
     empleado.puesto = data['puesto']
     empleado.num_empleado = data['num_empleado']
 
-     # Si 'encargados_ids' está en la solicitud
+    # Si 'encargados_ids' está en la solicitud
     if 'encargados_ids' in data:
         nuevos_encargados_ids = set(data['encargados_ids'])
         encargados_actuales_ids = set(encargado.id for encargado in empleado.encargados)
@@ -267,9 +273,9 @@ def editar_empleado(id):
 def editar_encargado(id):
     # Manejo del método PUT
       # Asegúrate de que la solicitud tiene el tipo de contenido correcto
-    if request.content_type != 'application/json':
-        return jsonify({'error': 'Tipo de contenido no soportado, se esperaba application/json'}), 415
-    
+    if not request.is_json:
+        return jsonify({'error': 'Se esperaba un contenido JSON'}), 415
+
 
     encargado = Encargado.query.get(id)
 
@@ -278,16 +284,42 @@ def editar_encargado(id):
 
     # Manejo de la solicitud
     data = request.json
-    encargado.nombre = data['nombre']
-    encargado.puesto = data['puesto']
-    encargado.num_empleado = data['num_empleado']
-    encargado.evaluador_id = data['evaluador_id']
-    db.session.commit()
-        
-    return jsonify({'message': 'Encargado editado correctamente'}), 200
+    encargado.nombre = data.get('nombre', encargado.nombre)
+    encargado.puesto = data.get('puesto', encargado.puesto)
+    encargado.num_empleado = data.get('num_empleado', encargado.num_empleado)
+
+    # Si 'encargados_ids' está en la solicitud
+    if 'encargados_ids' in data:
+        nuevos_encargados_ids = set(data['encargados_ids'])
+        encargados_actuales_ids = set(usuario.id for usuario in encargado.encargados)
+
+        # Encargados a eliminar (los que están asignados pero no están en los nuevos ids)
+        encargados_a_eliminar = encargados_actuales_ids - nuevos_encargados_ids
+        for usuario in encargado.encargados:
+            if usuario.id in encargados_a_eliminar:
+                encargado.encargados.remove(usuario)
+
+        # Encargados a agregar (los que no están ya asignados)
+        encargados_a_agregar = nuevos_encargados_ids - encargados_actuales_ids
+        encargados = Usuario.query.filter(Usuario.id.in_(encargados_a_agregar)).all()
+
+        # Verificar que todos los encargados existen
+        if len(encargados) != len(encargados_a_agregar):
+            return jsonify({'error': 'Uno o más encargados no fueron encontrados'}), 404
+
+        # Asignar los encargados al empleado
+        for usuario in encargados:
+            encargado.encargados.append(usuario)
+
+    try:
+        db.session.commit()
+        return jsonify({'message': 'Encargado editado correctamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
-# CREACION NUEVO EMPLEADO --------------------------------------------------------------------------------------------
+# CREACION NUEVO EMPLEADO Y ENCARGADO --------------------------------------------------------------------------------------------
 
 @routes_blueprint.route('/empleados/nuevo', methods=['OPTIONS', 'POST'])
 def new_employee():

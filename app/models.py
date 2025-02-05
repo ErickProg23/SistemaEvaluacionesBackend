@@ -11,12 +11,13 @@ class Usuario(db.Model):
     contrasena = db.Column(db.String(50), nullable=False)  # Contraseña encriptada
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)  # Clave foránea a la tabla "roles"
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)  # Fecha de creación, por defecto la hora actual
+    activo = db.Column(db.Boolean, default=True)
 
     # Relación con la tabla Rol
     rol = db.relationship('Rol', backref=db.backref('usuarios', lazy=True))
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Correo {self.correo}, Rol {self.rol_id}>"
+        return f"<Nombre {self.nombre}, Correo {self.correo}, Rol {self.rol_id}, Activo{self.activo}>"
     
 
 class Rol(db.Model):
@@ -55,14 +56,13 @@ class Encargado(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nombre = db.Column(db.String(255), nullable=False)
-    evaluador_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     puesto = db.Column(db.String(255), nullable=False)
     num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
 
-    evaluador = db.relationship('Usuario', backref='encargado_usuario', backref='usuarios')
+    encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
     empleados = db.relationship('Empleado', secondary='empleado_encargado', backref='encargados_rel', lazy=True)
 
     def __repr__(self):
