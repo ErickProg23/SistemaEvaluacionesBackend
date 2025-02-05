@@ -4,6 +4,7 @@ from .models import Usuario, Rol, Empleado, Encargado
 from flask_cors import CORS
 from app import db
 from datetime import datetime
+from sqlalchemy import func
 from . import jwt, bcrypt  # Asegúrate de que `bcrypt` esté configurado en tu archivo principal
 
 
@@ -45,31 +46,51 @@ def login():
 
 @routes_blueprint.route('/usuarios/empleados', methods=['GET'])
 def get_empleados():
-    empleados = Empleado.query.filter_by(rol_id=3)
+    empleados = Empleado.query.filter_by(rol_id=3).all()
 
-    # Verifica si se encontraron empleados
     if empleados:
-        # Itera sobre la lista de empleados y crea un diccionario con los datos necesarios
-        empleados_data = [{'id': empleado.id, 'nombre': empleado.nombre, 
-                           'puesto': empleado.puesto, 'num_empleado': empleado.num_empleado, 'activo': empleado.activo}
-                          for empleado in empleados]
+        empleados_data = []
+        for empleado in empleados:
+            
+            # Mapear los nombres de los encargados asociados
+            encargados_nombres = [encargado.nombre for encargado in empleado.encargados]
+
+            empleados_data.append({
+                'id': empleado.id,
+                'nombre': empleado.nombre,
+                'puesto': empleado.puesto,
+                'num_empleado': empleado.num_empleado,
+                'activo': empleado.activo,
+                'encargados': encargados_nombres
+            })
         return jsonify(empleados_data), 200
-    else:
-        return jsonify({'message': 'No se pudo extraer la informacion'}), 401
+
+    return jsonify({'message': 'No se pudo extraer la información'}), 401
+
 
 @routes_blueprint.route('/usuarios/encargados', methods=['GET'])
 def get_encargados():
     encargados = Encargado.query.all()
-    # Verifica si se encontraron encargados
 
     if encargados:
-        # Itera sobre la lista de encargados y crea un diccionario con los datos
-        encargados_data = [{'id': encargado.id, 'nombre': encargado.nombre, 'activo': encargado.activo, 'puesto': encargado.puesto, 'num_empleado': encargado.num_empleado} 
-                            for encargado in encargados]
+        encargados_data = []
+        
+        for encargado in encargados:
+            # Ahora usamos la relación con la tabla intermedia para contar empleados asignados
+            num_empleados = len(encargado.empleados)  # Usamos la relación 'empleados' en vez de 'evaluador_id'
+            
+            encargado_data = {
+                'id': encargado.id,
+                'nombre': encargado.nombre,
+                'activo': encargado.activo,
+                'puesto': encargado.puesto,
+                'num_empleado': encargado.num_empleado,
+                'num_empleados_asignados': num_empleados  # Número de empleados asignados
+            }
+            encargados_data.append(encargado_data)   
         return jsonify(encargados_data), 200
     else:
-        return jsonify({'message': 'No se pudo extraer la informacion'}), 401
-
+        return jsonify({'message': 'No se encontraron encargados'}), 404
 
 @routes_blueprint.route('/usuarios/empleados/<int:id>', methods=['GET'])
 def obtener_empleados(id):
@@ -100,25 +121,31 @@ def get_mayores():
         
 @routes_blueprint.route('/usuarios/empleado/<int:id>', methods=['GET'])
 def obtener_empleado(id):
-    # Obtiene al empleado con su evaluador
+    # Obtiene al empleado junto con sus encargados
     empleado = Empleado.query.filter_by(id=id).first()
 
     if empleado:
-        # Construcción del resultado con la información del evaluador
+        # Construcción del resultado con la información de los encargados
+        empleados_encargados = []
+        for encargado in empleado.encargados:
+            empleados_encargados.append({
+                'id': encargado.id,
+                'nombre': encargado.nombre
+            })
+        
         empleado_data = {
             'id': empleado.id,
             'nombre': empleado.nombre,
             'puesto': empleado.puesto,
             'num_empleado': empleado.num_empleado,
             'activo': empleado.activo,
-            'evaluador': {
-                'id': empleado.evaluador.id if empleado.evaluador else None,
-                'nombre': empleado.evaluador.nombre if empleado.evaluador else 'Sin encargado'
-            }
+            'encargados': empleados_encargados  # Ahora es una lista de encargados
         }
+
         return jsonify(empleado_data), 200
     else:
         return jsonify({'message': 'No se pudo extraer la información'}), 404
+
 
 @routes_blueprint.route('/usuarios/encargado/<int:id>', methods=['GET'])
 def obtener_encargado(id):
@@ -197,7 +224,6 @@ def editar_empleado(id):
     if request.content_type != 'application/json':
         return jsonify({'error': 'Tipo de contenido no soportado, se esperaba application/json'}), 415
     
-
     empleado = Empleado.query.get(id)
 
     if not empleado:
@@ -208,9 +234,32 @@ def editar_empleado(id):
     empleado.nombre = data['nombre']
     empleado.puesto = data['puesto']
     empleado.num_empleado = data['num_empleado']
-    empleado.evaluador_id = data['evaluador_id']
+
+     # Si 'encargados_ids' está en la solicitud
+    if 'encargados_ids' in data:
+        nuevos_encargados_ids = set(data['encargados_ids'])
+        encargados_actuales_ids = set(encargado.id for encargado in empleado.encargados)
+
+        # Encargados a eliminar (los que están asignados pero no están en los nuevos ids)
+        encargados_a_eliminar = encargados_actuales_ids - nuevos_encargados_ids
+        for encargado in empleado.encargados:
+            if encargado.id in encargados_a_eliminar:
+                empleado.encargados.remove(encargado)
+
+        # Encargados a agregar (los que no están ya asignados)
+        encargados_a_agregar = nuevos_encargados_ids - encargados_actuales_ids
+        encargados = Encargado.query.filter(Encargado.id.in_(encargados_a_agregar)).all()
+
+        # Verificar que todos los encargados existen
+        if len(encargados) != len(encargados_a_agregar):
+            return jsonify({'error': 'Uno o más encargados no fueron encontrados'}), 404
+
+        # Asignar los encargados al empleado
+        for encargado in encargados:
+            empleado.encargados.append(encargado)
+
     db.session.commit()
-        
+
     return jsonify({'message': 'Empleado editado correctamente'}), 200
 
 
@@ -233,7 +282,6 @@ def editar_encargado(id):
     encargado.puesto = data['puesto']
     encargado.num_empleado = data['num_empleado']
     encargado.evaluador_id = data['evaluador_id']
-    encargado.id = data['id']
     db.session.commit()
         
     return jsonify({'message': 'Encargado editado correctamente'}), 200
@@ -241,15 +289,10 @@ def editar_encargado(id):
 
 # CREACION NUEVO EMPLEADO --------------------------------------------------------------------------------------------
 
-@routes_blueprint.route('/empleados/nuevo/<int:id>', methods=['OPTIONS', 'POST'])
-def new_employee(id):
+@routes_blueprint.route('/empleados/nuevo', methods=['OPTIONS', 'POST'])
+def new_employee():
     if request.method == 'OPTIONS':
         return jsonify({'message': 'OK'}), 200
-
-    encargado = Encargado.query.get(id)
-    if not encargado:
-        return jsonify({'error': 'Encargado no encontrado'}), 404
-
 
     data = request.get_json()
     if not data:
@@ -258,7 +301,7 @@ def new_employee(id):
     nombre = data.get('nombre')
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
-    evaluador_id = data.get('evaluador_id')
+    encargados_ids = data.get('encargados_ids', [])
     rol_id = data.get('rol_id', 3)
 
     if not nombre or not puesto or not num_empleado:
@@ -269,10 +312,18 @@ def new_employee(id):
             nombre=nombre,
             puesto=puesto,
             num_empleado=num_empleado,
-            evaluador_id=evaluador_id,
             rol_id=rol_id
         )
         db.session.add(nuevo_empleado)
+        db.session.flush()
+
+        # Relacionar los encargados seleccionados con el empleado
+        if encargados_ids:
+            encargados = Encargado.query.filter(Encargado.id.in_(encargados_ids)).all()
+            if not encargados:
+                return jsonify({'error': 'Uno o más encargados no encontrados'}), 404
+            nuevo_empleado.encargados.extend(encargados)  # Asignar la relación muchos a muchos
+
         db.session.commit()
 
         return jsonify({
@@ -282,7 +333,7 @@ def new_employee(id):
                 'nombre': nuevo_empleado.nombre,
                 'puesto': nuevo_empleado.puesto,
                 'num_empleado': nuevo_empleado.num_empleado,
-                'evaluador': nuevo_empleado.evaluador_id,
+                'encargados': [encargado.nombre for encargado in nuevo_empleado.encargados],
                 'rol': nuevo_empleado.rol_id
             }
         }), 201
@@ -291,15 +342,10 @@ def new_employee(id):
         return jsonify({'error':'Error al crear el empleado', 'mensaje': str(e)}), 500
 
 
-@routes_blueprint.route('/encargados/nuevo/<int:id>', methods=['OPTIONS', 'POST'])
-def nuevo_encargado(id):
+@routes_blueprint.route('/encargados/nuevo', methods=['OPTIONS', 'POST'])
+def nuevo_encargado():
     if request.method == 'OPTIONS':
         return jsonify({'message': 'OK'}), 200
-
-    usuario = Usuario.query.get(id)
-    if not usuario:
-        return jsonify({'error': 'Encargado especial no encontrado'}), 404
-
 
     data = request.get_json()
     if not data:
@@ -308,21 +354,31 @@ def nuevo_encargado(id):
     nombre = data.get('nombre')
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
-    evaluador_id = data.get('evaluador_id')
+    encargados_ids = data.get('encargados_ids', [])
     rol_id = data.get('rol_id',2)
 
     if not nombre or not puesto or not num_empleado:
         return jsonify({'error': 'Faltan datos'}), 400
 
     try:
+
         nuevo_encargado = Encargado(
             nombre=nombre,
             puesto=puesto,
             num_empleado=num_empleado,
-            evaluador_id=evaluador_id,
             rol_id=rol_id
         )
         db.session.add(nuevo_encargado)
+        db.session.flush()
+
+        # Relacionar los encargados seleccionados con el empleado
+        if encargados_ids:
+            encargados = Usuario.query.filter(Usuario.id.in_(encargados_ids)).all()
+            if len(encargados) != len(encargados_ids):
+                return jsonify({'error': 'Uno o más encargados no encontrados'}), 404
+
+            nuevo_encargado.encargados.extend(encargados)  # Asignar la relación muchos a muchos
+
         db.session.commit()
 
         return jsonify({
@@ -331,14 +387,15 @@ def nuevo_encargado(id):
                 'id': nuevo_encargado.id,
                 'nombre': nuevo_encargado.nombre,
                 'puesto': nuevo_encargado.puesto,
+                'encargados': [{'id': e.id, 'nombre': e.nombre} for e in nuevo_encargado.encargados],  # Mostrar los evaluadores
                 'num_empleado': nuevo_encargado.num_empleado,
-                'evaluador': nuevo_encargado.evaluador_id,
                 'rol': nuevo_encargado.rol_id
             }
         }), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error':'Error al crear el encargado', 'mensaje': str(e)}), 500
+        return jsonify({'error': 'Error al crear el encargado', 'mensaje': str(e)}), 500
 
 
 

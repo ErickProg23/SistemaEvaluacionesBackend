@@ -37,14 +37,13 @@ class Empleado(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nombre = db.Column(db.String(255), nullable=False)
     puesto = db.Column(db.String(255), nullable=False)
-    evaluador_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=True, index=True)  # Relación con 'encargado'
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False, index=True) 
     num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
 
      # Relación con el modelo Encargado
-    evaluador = db.relationship('Encargado', backref='empleados')
+    encargados = db.relationship('Encargado', secondary='empleado_encargado', backref='empleados_rel', lazy='dynamic')
     rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
@@ -63,12 +62,29 @@ class Encargado(db.Model):
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
 
-    evaluador = db.relationship('Usuario', backref='encargados', foreign_keys=[evaluador_id])
+    evaluador = db.relationship('Usuario', backref='encargado_usuario', backref='usuarios')
+    empleados = db.relationship('Empleado', secondary='empleado_encargado', backref='encargados_rel', lazy=True)
 
     def __repr__(self):
         return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}>"
 
+class EmpleadoEncargado(db.Model):
+    __tablename__='empleado_encargado'
+
+    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), primary_key=True)
+    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), primary_key=True)
+
+    def __repr__(self):
+        return f"<Empleado {self.empleado_id}, Encargado {self.encargado_id}>"
     
+class EncargadoUsuario(db.Model):
+    __tablename__='encargado_usuario'
+
+    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), primary_key=True)
+
+    def __repr__(self):
+        return f"<Encargado {self.encargado_id}, Usuario {self.usuario_id}>"
 
 class Pregunta(db.Model):
     __tablename__='pregunta'
