@@ -92,19 +92,32 @@ def get_encargados():
     else:
         return jsonify({'message': 'No se encontraron encargados'}), 404
 
-@routes_blueprint.route('/usuarios/empleados/<int:id>', methods=['GET'])
-def obtener_empleados(id):
-    empleados = Empleado.query.filter_by(evaluador_id=id).all()
+@routes_blueprint.route('/usuarios/empleados/<int:encargado_id>', methods=['GET'])
+def obtener_empleados_por_encargado(encargado_id):
+    try:
+        # Consultar empleados asociados al encargado específico
+        empleados = Empleado.query.filter(Empleado.encargados.any(id=encargado_id)).all()
 
-    # Verifica si se encontraron empleados
-    if empleados:
-        # Itera sobre la lista de empleados y crea un diccionario con los datos necesarios
-        empleados_data = [{'id': empleado.id, 'nombre': empleado.nombre, 
-                           'puesto': empleado.puesto, 'num_empleado': empleado.num_empleado, 'activo': empleado.activo}
-                          for empleado in empleados]
+        if not empleados:
+            return jsonify([]), 200
+
+        # Crear la lista de empleados
+        empleados_data = [
+            {
+                'id': empleado.id,
+                'nombre': empleado.nombre,
+                'puesto': empleado.puesto,
+                'num_empleado': empleado.num_empleado,
+                'activo': empleado.activo
+            }
+            for empleado in empleados
+        ]
+
         return jsonify(empleados_data), 200
-    else:
-        return jsonify({'message': 'No se pudo extraer la informacion'}), 401
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @routes_blueprint.route('/usuarios/mayores', methods=['GET'])
 def get_mayores():

@@ -48,7 +48,7 @@ class Empleado(db.Model):
     rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluador {self.evaluador_id}, Rol {self.rol_id}>"
+        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluadores {self.encargados}, Rol {self.rol_id}>"
     
 
 class Encargado(db.Model):
