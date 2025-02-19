@@ -33,11 +33,18 @@ def login():
         # Recupera el rol_id del usuario
         rol_id = usuario.rol_id  # Asegúrate de que `Usuario` tiene una columna llamada `rol_id`
 
+        # Busca si el usuario tiene un registro en la tabla encargado
+        encargado = Encargado.query.filter_by(usuario_id=usuario.id).first()
+
+        # Si el encargado existe, obtenemos su ID
+        id_encargado = encargado.id if encargado else None
+
         nombre = usuario.nombre
         
         return jsonify({'access_token': access_token}
         , {'rol_id': rol_id}
-        , {'nombre': nombre}), 200
+        , {'nombre': nombre},
+        {'id_encargado': id_encargado}), 200
 
     return jsonify({'message': 'Correo o contraseña incorrectos'}), 401
 

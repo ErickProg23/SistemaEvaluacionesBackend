@@ -61,6 +61,7 @@ class Encargado(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
 
     encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
     empleados = db.relationship('Empleado', secondary='empleado_encargado', backref='encargados_rel', lazy=True)
