@@ -87,15 +87,23 @@ class EncargadoUsuario(db.Model):
         return f"<Encargado {self.encargado_id}, Usuario {self.usuario_id}>"
 
 class Pregunta(db.Model):
-    __tablename__='pregunta'
+    __tablename__ = 'pregunta'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     texto = db.Column(db.String(500), nullable=False)
-    peso = db.Column(db.Numeric(5, 2), nullable=False)  # Usamos db.Numeric para manejar valores decimales
+    peso = db.Column(db.Numeric(5, 2), nullable=False)  # Manejo de decimales
+    descripcion = db.Column(db.String(65535))
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "texto": self.texto,
+            "descripcion": self.descripcion
+        }
 
     def __repr__(self):
-        return f"<Texto {self.texto}, Peso {self.peso}>"
+        return f"<Texto {self.texto}, Peso {self.peso}, Descripcion {self.descripcion}>"
+
 
 class Respuesta(db.Model):
     __tablename__='respuesta'

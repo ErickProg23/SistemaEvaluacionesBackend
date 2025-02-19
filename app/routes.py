@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required
-from .models import Usuario, Rol, Empleado, Encargado
+from .models import Usuario, Rol, Empleado, Encargado, Pregunta
 from flask_cors import CORS
 from app import db
 from datetime import datetime
@@ -187,6 +187,19 @@ def obtener_encargado(id):
         return jsonify(encargado_data), 200
     else:
         return jsonify({'message': 'No se pudo extraer la información'}), 404
+
+@routes_blueprint.route('/preguntas', methods=['GET'])
+def obtener_preguntas():
+    # Obtiene todas las preguntas
+    preguntas = Pregunta.query.all()
+
+    if not preguntas:
+        return jsonify({"mensaje": "No hay preguntas disponibles"}), 404
+
+    # Convertir los objetos en formato JSON
+    preguntas_json = [pregunta.to_dict() for pregunta in preguntas]
+
+    return jsonify(preguntas_json), 200
 
 
 # ACTUALIZAR DATOS --------------------------------------------------------------------------------------------
@@ -496,3 +509,4 @@ def promote_employee(id):
 
 
 
+# Guardar proceso -------------------------------------------------------------------------------------------------------
