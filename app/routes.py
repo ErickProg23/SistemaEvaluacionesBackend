@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required
-from .models import Usuario, Rol, Empleado, Encargado, Pregunta
+from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion
 from flask_cors import CORS
 from app import db
 from datetime import datetime
@@ -516,4 +516,64 @@ def promote_employee(id):
 
 
 
-# Guardar proceso -------------------------------------------------------------------------------------------------------
+# GUARDAR EVALUACION  -------------------------------------------------------------------------------------------------------
+@routes_blueprint.route('/evaluacion/nueva', methods=['OPTIONS', 'POST'])
+def guardar_evaluacion():
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'OK'}), 200
+
+    try:
+        # Obtener los datos del payload y el id_encargado desde el cuerpo de la solicitud
+        data = request.json
+        payload = data.get('payload')
+        id_encargado = data.get('idEncargado')
+
+        # Validar que los datos necesarios estén presentes
+        if not payload or not id_encargado:
+            return jsonify({'error': 'Datos incompletos'}), 400
+
+        # Procesar cada evaluación en el payload
+        for evaluacion_data in payload:
+            empleado_id = evaluacion_data.get('empleado_id')
+            calificaciones = evaluacion_data.get('calificaciones')
+            comentarios = evaluacion_data.get('comentarios')
+            ausente = evaluacion_data.get('ausente', False)  # Valor por defecto: False
+
+            # Convertir comentarios a cadena si es una lista
+            if isinstance(comentarios, list):
+                comentarios = ', '.join(comentarios)  # Une los elementos de la lista en una cadena
+
+            # Convertir el valor de 'ausente' a 1 (true) o 0 (false)
+            ausente_db = 1 if ausente else 0
+
+            # Obtener los aspectos (preguntas) desde la base de datos
+            aspectos_db = Pregunta.query.all()
+
+            # Procesar cada aspecto (pregunta)
+            for aspecto_db in aspectos_db:
+                calificacion = calificaciones.get(aspecto_db.texto, 0)  # Obtener la calificación del aspecto
+                porcentaje = calificacion * aspecto_db.peso  # Calcular el porcentaje ponderado
+
+                # Crear una nueva evaluación para cada aspecto
+                nueva_evaluacion = Evaluacion(
+                    empleado_id=empleado_id,
+                    encargado_id=id_encargado,
+                    fecha_evaluacion=datetime.now(),
+                    aspecto=aspecto_db.texto,  # Nombre del aspecto
+                    total_puntos=calificacion,  # Calificación del aspecto
+                    porcentaje_total=porcentaje,  # Porcentaje ponderado
+                    comentarios=comentarios,  # Comentarios generales
+                    ausente=ausente_db  # Guardar 1 si está ausente, 0 si no
+                )
+
+                # Guardar en la base de datos
+                db.session.add(nueva_evaluacion)
+
+        # Confirmar los cambios en la base de datos
+        db.session.commit()
+
+        return jsonify({'message': 'Evaluaciones guardadas correctamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

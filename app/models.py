@@ -125,8 +125,10 @@ class Evaluacion(db.Model):
     encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
     fecha_evaluacion = db.Column(db.Date, nullable=False)
     total_puntos = db.Column(db.Numeric(5,2), nullable=False)
-    porcentaje = db.Column(db.Numeric(5,2), nullable=False)
+    porcentaje_total = db.Column(db.Numeric(5,2), nullable=False)
     comentarios = db.Column(db.String(255), nullable=False)
+    aspecto = db.Column(db.String(255), nullable=False)
+    ausente = db.Column(db.Boolean, default=True)
     
     def __repr__(self):
         return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}>'
