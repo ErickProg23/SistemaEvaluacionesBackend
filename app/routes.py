@@ -1,10 +1,11 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required
-from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion
+from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion, Notificacion
 from flask_cors import CORS
 from app import db
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import func
+import pytz
 from . import jwt, bcrypt  # Asegúrate de que `bcrypt` esté configurado en tu archivo principal
 
 
@@ -577,3 +578,82 @@ def guardar_evaluacion():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+#----------------------------NOTIFICACIONES------------------------------------------------------
+@routes_blueprint.route('/notificaciones/nueva', methods=['OPTIONS', 'POST'])
+def nueva_notificacion():
+    # Obtener el payload de la solicitud
+
+     # 1. Verificar el tipo de solicitud
+    if request.method == 'OPTIONS':
+        return '', 200  # Si es un preflight request para CORS
+
+    try:
+        data = request.get_json()
+
+        id_encargado = data['id_encargado']
+        id_empleado = data['id_empleado']
+        accion = data['accion']
+
+
+        fecha_actual = datetime.now()
+
+        if isinstance(id_encargado, list):
+            for encargado_id in id_encargado:
+                nueva_notificacion = Notificacion(
+                    id_encargado=encargado_id,
+                    id_empleado=id_empleado,
+                    accion=accion,
+                    fecha=fecha_actual
+                )
+                db.session.add(nueva_notificacion)
+
+        else: 
+            nueva_notificacion = Notificacion(
+                id_encargado=id_encargado,
+                id_empleado=id_empleado,
+                accion=accion,
+                fecha=fecha_actual
+            )
+            db.session.add(nueva_notificacion)
+
+        db.session.commit()
+
+        return jsonify({'message': 'Notificación creada correctamente'}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al crear la notificacion: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# --------------- OBTENER NOTIFICACIONES ----------------------------------------------------------
+@routes_blueprint.route('/notificaciones', methods=['OPTIONS', 'GET'])
+def obtener_notificaciones():
+
+    encargado_id = request.args.get('encargado_id', type=int)
+    if not encargado_id:
+        return jsonify({'error': 'Falta el parámetro encargado_id'}), 400
+
+    fecha_limite = datetime.utcnow() - timedelta(days=60) # 60 dias atras desde hoy
+
+    notificaciones = Notificacion.query.filter(
+        Notificacion.id_encargado == encargado_id,
+        Notificacion.fecha >= fecha_limite
+    ).all()
+
+    if not notificaciones:
+        return jsonify({'message': 'No hay notificaciones'}), 404
+
+    notificaciones_data = []
+    for notificacion in notificaciones:
+        notificaciones_data.append({
+            'id': notificacion.id,
+            'id_encargado': notificacion.id_encargado,
+            'id_empleado': notificacion.id_empleado,
+            'accion': notificacion.accion,
+            'fecha': notificacion.fecha.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    return jsonify({'notificaciones': notificaciones_data}), 200
+

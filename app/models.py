@@ -61,7 +61,7 @@ class Encargado(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
-    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
 
     encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
     empleados = db.relationship('Empleado', secondary='empleado_encargado', backref='encargados_rel', lazy=True)
@@ -132,3 +132,19 @@ class Evaluacion(db.Model):
     
     def __repr__(self):
         return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}>'
+
+class Notificacion(db.Model):
+    __tablename__ = 'notificaciones'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    id_empleado = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    accion = db.Column(db.Integer, nullable=False)
+
+    # Relaciones
+    encargado = db.relationship('Encargado', backref='notificaciones')
+    empleado = db.relationship('Empleado', backref='notificaciones')
+
+    def __repr__(self):
+        return f'<Notificacion ID: {self.id}, Encargado ID: {self.id}, Empleado ID: {self.id}, Accion: {self.accion}, Fecha: {self.fecha}>'
