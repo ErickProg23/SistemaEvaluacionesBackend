@@ -141,10 +141,11 @@ class Notificacion(db.Model):
     id_empleado = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
     fecha = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     accion = db.Column(db.Integer, nullable=False)
+    activo = db.Column(db.Boolean, default=True)
 
     # Relaciones
     encargado = db.relationship('Encargado', backref='notificaciones')
     empleado = db.relationship('Empleado', backref='notificaciones')
 
     def __repr__(self):
-        return f'<Notificacion ID: {self.id}, Encargado ID: {self.id}, Empleado ID: {self.id}, Accion: {self.accion}, Fecha: {self.fecha}>'
+        return f'<Notificacion ID: {self.id}, Encargado ID: {self.id}, Empleado ID: {self.id}, Accion: {self.accion}, Fecha: {self.fecha}, Activo: {self.activo}>'

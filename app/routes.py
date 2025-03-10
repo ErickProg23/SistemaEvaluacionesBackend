@@ -3,8 +3,9 @@ from flask_jwt_extended import create_access_token, jwt_required
 from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion, Notificacion
 from flask_cors import CORS
 from app import db
+from collections import defaultdict
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, update
 import pytz
 from . import jwt, bcrypt  # Asegúrate de que `bcrypt` esté configurado en tu archivo principal
 
@@ -594,6 +595,7 @@ def nueva_notificacion():
         id_encargado = data['id_encargado']
         id_empleado = data['id_empleado']
         accion = data['accion']
+        activo = data['activo']
 
 
         fecha_actual = datetime.now()
@@ -626,6 +628,40 @@ def nueva_notificacion():
         print(f"Error al crear la notificacion: {e}")
         return jsonify({'error': str(e)}), 500
 
+# -------------------------------ELIMINAR NOTIFICACIONES-------------------------------------
+@routes_blueprint.route('/notificaciones/eliminar', methods=['OPTIONS', 'POST'])
+def eliminar_notificacion():
+
+    # 1. Verificar el tipo de solicitud
+    if request.method == 'OPTIONS':
+        return '', 200  # Si es un preflight request para CORS
+
+    try:
+        data = request.get_json()
+
+        if not data or 'id' not in data:
+            return jsonify({'error': 'Falta el id de la notificación'}), 400
+
+        notificacion_id = data['id']
+
+        notificacion = Notificacion.query.get(notificacion_id)
+
+        if not notificacion:
+            return jsonify({'error': 'Notificación no encontrada'}), 404
+
+        notificacion.activo = False
+
+        db.session.commit()
+
+        return jsonify({'message': 'Notificación eliminada correctamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al eliminar la notificacion: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    
+
 
 # --------------- OBTENER NOTIFICACIONES ----------------------------------------------------------
 @routes_blueprint.route('/notificaciones', methods=['OPTIONS', 'GET'])
@@ -649,6 +685,7 @@ def obtener_notificaciones():
     for notificacion in notificaciones:
         notificaciones_data.append({
             'id': notificacion.id,
+            'activo': notificacion.activo,
             'id_encargado': notificacion.id_encargado,
             'id_empleado': notificacion.id_empleado,
             'accion': notificacion.accion,
@@ -657,3 +694,195 @@ def obtener_notificaciones():
 
     return jsonify({'notificaciones': notificaciones_data}), 200
 
+# --------------- ELIMINACION DE NOTIFICACIONES TODAS ----------------------------------------------------------
+@routes_blueprint.route('/notificaciones/eliminar-todas', methods=['OPTIONS','POST'])
+def eliminar_todas_notificaciones():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+
+        if not ids:
+            return jsonify({'error': 'Se requieren IDs de notificaciones'}), 400
+
+        # Desactivar solo las notificaciones con IDs recibidos y activas
+        stmt = update(Notificacion).where(
+            Notificacion.id.in_(ids),
+            Notificacion.activo == True
+        ).values(activo=False)
+
+        result = db.session.execute(stmt)
+        db.session.commit()
+
+        return jsonify({
+            "message": f"{result.rowcount} notificaciones desactivadas",
+            "ids": ids
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error desactivando notificaciones: {str(e)}")
+        return jsonify({"error": "Error al desactivar notificaciones"}), 500
+
+# --------------- OBTENCION DE EVALUACIONES ----------------------------------------------------------
+@routes_blueprint.route('/evaluaciones/todas', methods=['OPTIONS','GET'])
+def obtener_evaluaciones_todas():
+    #Validar parametros
+    encargado_id = request.args.get('encargado_id')
+    if not encargado_id:
+        return jsonify({'error': 'Se requiere ID de encargado'}), 400
+
+    try: 
+        fecha_reciente = db.session.query(
+            db.func.max(
+                db.case(
+                    (Evaluacion.encargado_id == encargado_id, db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')),
+                    else_=None
+                )
+            )
+        ).scalar()
+
+        if not fecha_reciente:
+            return jsonify({'error': 'No hay evaluaciones'}), 404
+
+        # 2. Obtener las evaluaciones del mes mas reciente
+        evaluaciones = Evaluacion.query.filter(
+            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente,
+            Evaluacion.encargado_id == encargado_id
+        ).all()
+
+        # Obtener IDs de empleados únicos
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}
+
+        # 3. Consultar nombres de empleados
+        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+            Empleado.id.in_(empleado_ids)
+        ).all()
+        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+
+        # 4. Procesar datos
+        resultados = defaultdict(lambda: {
+            'suma_porcentaje_total': 0.0,
+            'porcentaje_final': 0.0,
+            'nombre': 'Nombre no encontrado'
+        })
+
+        for eval in evaluaciones:
+            empleado_id = eval.empleado_id
+            resultados[empleado_id]['suma_porcentaje_total'] += float(eval.porcentaje_total)
+            resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+
+        # Calcular porcentaje_final
+        for empleado_id, datos in resultados.items():
+            suma_porcentaje_total = datos['suma_porcentaje_total']
+            datos['porcentaje_final'] = (suma_porcentaje_total / 500) * 100
+            datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)
+
+        # 5. Obtener top 5 empleados
+        top_empleados = sorted(
+            [
+                {
+                    'nombre': datos['nombre'],
+                    'calificacion_final': round(datos['porcentaje_final'], 2)
+                }
+                for empleado_id, datos in resultados.items()
+            ],
+            key=lambda x: x['calificacion_final'],
+            reverse=True
+        )[:5]
+
+        return jsonify({
+            'top_empleados': top_empleados
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@routes_blueprint.route('/evaluaciones', methods=['OPTIONS','GET'])
+def obtener_evaluaciones():
+    #Validar parametros
+    encargado_id = request.args.get('encargado_id')
+    if not encargado_id:
+        return jsonify({'error': 'Se requiere ID de encargado'}), 400
+
+    try:
+        #1. Determinar el mes mas reciente con evaluaciones
+        fecha_reciente = db.session.query(
+            db.func.max(
+                db.case(
+                    (Evaluacion.encargado_id == encargado_id, db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')),
+                    else_=None
+                )
+            )
+        ).scalar()
+
+        if not fecha_reciente:
+            return jsonify({'error': 'No hay evaluaciones'}), 404
+
+        # 2. Obtener todas las evaluaciones del mes mas reciente 
+        evaluaciones = db.session.query(Evaluacion).filter(
+            Evaluacion.encargado_id == encargado_id,
+            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
+        ).all()
+
+        # Obtener IDs de empleados únicos
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}
+
+        # 3. Consultar nombres de empleados
+        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+            Empleado.id.in_(empleado_ids)
+        ).all()
+        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+
+        # 4. Procesar datos
+        resultados = defaultdict(lambda: {
+            'suma_porcentaje_total': 0.0,
+            'porcentaje_final': 0.0,
+            'nombre': 'Nombre no encontrado'
+        })
+
+        for eval in evaluaciones:
+            empleado_id = eval.empleado_id
+            resultados[empleado_id]['suma_porcentaje_total'] += float(eval.porcentaje_total)
+            resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+
+        # Calcular porcentaje_final
+        for empleado_id, datos in resultados.items():
+            suma_porcentaje_total = datos['suma_porcentaje_total']
+            datos['porcentaje_final'] = (suma_porcentaje_total / 500) * 100
+            datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)
+
+
+
+         # 5. Calcular promedios 
+        promedios = [min(datos['porcentaje_final'], 100.0) for datos in resultados.values()]
+        promedio_general = sum(promedios) / len(promedios) if promedios else 0
+
+        # 6. Formatear respuesta
+        from dateutil.relativedelta import relativedelta
+
+        fecha_inicio = datetime.strptime(fecha_reciente, '%Y-%m')
+        fecha_fin = fecha_inicio + relativedelta(months=1, days=-1)  # Último día del mes
+
+
+        return jsonify({
+            'promedio_general': round(promedio_general, 2),
+            'total_empleados': len(promedios),
+            'periodo':{
+                'inicio': fecha_inicio,
+                'fin': fecha_fin
+            },
+            'detalle_empleados':[
+                {
+                    'nombre': datos['nombre'],
+                    'empleado_id': emp_id,
+                    'calificacion_final': round(datos['porcentaje_final'], 2),
+                } for emp_id, datos in resultados.items()
+            ]
+            }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}),500
