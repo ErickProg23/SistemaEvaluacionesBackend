@@ -418,7 +418,7 @@ def nuevo_encargado():
     if not data:
         return jsonify({'error': 'No se recibio datos'}), 400
 
-    nombre = data.get('nombre')
+    nombre = data.get('nombre').strip().lower()  # Convertir a minúsculas y quitar espacios
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     encargados_ids = data.get('encargados_ids', [])
@@ -428,12 +428,17 @@ def nuevo_encargado():
         return jsonify({'error': 'Faltan datos'}), 400
 
     try:
+        # Paso 1: Buscar el usuario por nombre
+        usuario = Usuario.query.filter(Usuario.nombre.collate('utf8mb4_general_ci') == nombre).first()
+        if not usuario:
+            return jsonify({'error': f'No existe un usuario con el nombre "{nombre}"'}), 404
 
         nuevo_encargado = Encargado(
             nombre=nombre,
             puesto=puesto,
             num_empleado=num_empleado,
-            rol_id=rol_id
+            rol_id=rol_id,
+            usuario_id=usuario.id
         )
         db.session.add(nuevo_encargado)
         db.session.flush()
@@ -453,6 +458,7 @@ def nuevo_encargado():
             'encargado': {
                 'id': nuevo_encargado.id,
                 'nombre': nuevo_encargado.nombre,
+                'usuario_id': nuevo_encargado.usuario_id,
                 'puesto': nuevo_encargado.puesto,
                 'encargados': [{'id': e.id, 'nombre': e.nombre} for e in nuevo_encargado.encargados],  # Mostrar los evaluadores
                 'num_empleado': nuevo_encargado.num_empleado,
@@ -729,28 +735,20 @@ def eliminar_todas_notificaciones():
 # --------------- OBTENCION DE EVALUACIONES ----------------------------------------------------------
 @routes_blueprint.route('/evaluaciones/todas', methods=['OPTIONS','GET'])
 def obtener_evaluaciones_todas():
-    #Validar parametros
-    encargado_id = request.args.get('encargado_id')
-    if not encargado_id:
-        return jsonify({'error': 'Se requiere ID de encargado'}), 400
-
     try: 
+        # Get the most recent month with evaluations
         fecha_reciente = db.session.query(
             db.func.max(
-                db.case(
-                    (Evaluacion.encargado_id == encargado_id, db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')),
-                    else_=None
-                )
+                db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')
             )
         ).scalar()
 
         if not fecha_reciente:
             return jsonify({'error': 'No hay evaluaciones'}), 404
 
-        # 2. Obtener las evaluaciones del mes mas reciente
+        # Get all evaluations from the most recent month
         evaluaciones = Evaluacion.query.filter(
-            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente,
-            Evaluacion.encargado_id == encargado_id
+            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
         ).all()
 
         # Obtener IDs de empleados únicos

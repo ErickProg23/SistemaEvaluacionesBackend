@@ -6,7 +6,7 @@ class Usuario(db.Model):
     __tablename__ = 'usuarios'  # Nombre de la tabla en la base de datos
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # id como clave primaria y autoincrementable
-    nombre = db.Column(db.String(255), nullable=False)  # Nombre del usuario
+    nombre = db.Column(db.String(255),unique=True, nullable=False)  # Nombre del usuario
     correo = db.Column(db.String(255), unique=True, nullable=False)  # Correo único
     contrasena = db.Column(db.String(50), nullable=False)  # Contraseña encriptada
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)  # Clave foránea a la tabla "roles"
@@ -31,6 +31,15 @@ class Rol(db.Model):
         return f"<Rol {self.nombre}>"
     
 
+class EmpleadoEncargado(db.Model):
+    __tablename__='empleado_encargado'
+
+    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), primary_key=True)
+    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), primary_key=True)
+
+    def __repr__(self):
+        return f"<Empleado {self.empleado_id}, Encargado {self.encargado_id}>"
+
 class Empleado(db.Model):
     __tablename__='empleado'
 
@@ -44,7 +53,14 @@ class Empleado(db.Model):
     activo = db.Column(db.Boolean, default=True)
 
      # Relación con el modelo Encargado
-    encargados = db.relationship('Encargado', secondary='empleado_encargado', backref='empleados_rel', lazy='dynamic')
+    # Update this relationship
+    encargados = db.relationship(
+        'Encargado',
+        secondary='empleado_encargado',
+        back_populates='empleados',
+        lazy='dynamic'
+    )
+
     rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
@@ -64,19 +80,16 @@ class Encargado(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
 
     encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
-    empleados = db.relationship('Empleado', secondary='empleado_encargado', backref='encargados_rel', lazy=True)
+    empleados = db.relationship(
+        'Empleado',
+        secondary='empleado_encargado',
+        back_populates='encargados',
+        lazy=True,
+        overlaps="empleados_rel,encargados"
+    )
 
     def __repr__(self):
         return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}>"
-
-class EmpleadoEncargado(db.Model):
-    __tablename__='empleado_encargado'
-
-    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), primary_key=True)
-    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), primary_key=True)
-
-    def __repr__(self):
-        return f"<Empleado {self.empleado_id}, Encargado {self.encargado_id}>"
     
 class EncargadoUsuario(db.Model):
     __tablename__='encargado_usuario'
