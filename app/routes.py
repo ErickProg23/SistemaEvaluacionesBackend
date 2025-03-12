@@ -736,64 +736,87 @@ def eliminar_todas_notificaciones():
 @routes_blueprint.route('/evaluaciones/todas', methods=['OPTIONS','GET'])
 def obtener_evaluaciones_todas():
     try: 
-        # Get the most recent month with evaluations
+        # 1. Obtener el mes más reciente (incluyendo evaluaciones ausentes)
         fecha_reciente = db.session.query(
-            db.func.max(
-                db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')
-            )
-        ).scalar()
+            db.func.max(db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m'))
+        ).scalar()  # ¡Sin filtrar por ausente!
 
         if not fecha_reciente:
             return jsonify({'error': 'No hay evaluaciones'}), 404
 
-        # Get all evaluations from the most recent month
+        # 2. Obtener TODAS las evaluaciones del mes (ausentes y no ausentes)
         evaluaciones = Evaluacion.query.filter(
             db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
         ).all()
 
-        # Obtener IDs de empleados únicos
-        empleado_ids = {eval.empleado_id for eval in evaluaciones}
+        # 3. Separar evaluaciones válidas y ausentes
+        evaluaciones_validas = [e for e in evaluaciones if e.ausente == 0]
+        evaluaciones_ausentes = [e for e in evaluaciones if e.ausente == 1]
 
-        # 3. Consultar nombres de empleados
-        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
-            Empleado.id.in_(empleado_ids)
-        ).all()
-        empleados_dict = {emp.id: emp.nombre for emp in empleados}
-
-        # 4. Procesar datos
+        # 4. Procesar solo las evaluaciones válidas para cálculos
         resultados = defaultdict(lambda: {
-            'suma_porcentaje_total': 0.0,
-            'porcentaje_final': 0.0,
-            'nombre': 'Nombre no encontrado'
+            'semanas': defaultdict(lambda: {'suma_aspectos': 0.0}),
+            'nombre': 'Nombre no encontrado',
+            'promedio_mensual': 0.0,
+            'ausente': False  # Indica si el empleado tiene solo evaluaciones ausentes
         })
 
-        for eval in evaluaciones:
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}  # Incluye todos los empleados
+        empleados_dict = {emp.id: emp.nombre for emp in Empleado.query.filter(Empleado.id.in_(empleado_ids)).all()}
+
+        # Procesar evaluaciones válidas
+        for eval in evaluaciones_validas:
             empleado_id = eval.empleado_id
-            resultados[empleado_id]['suma_porcentaje_total'] += float(eval.porcentaje_total)
+            semana = eval.fecha_evaluacion.isocalendar().week
+            resultados[empleado_id]['semanas'][semana]['suma_aspectos'] += float(eval.porcentaje_total)
             resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
 
-        # Calcular porcentaje_final
+        # Procesar evaluaciones ausentes (solo para incluir en la respuesta)
+        for eval in evaluaciones_ausentes:
+            empleado_id = eval.empleado_id
+            if empleado_id not in resultados:
+                resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+                resultados[empleado_id]['ausente'] = True  # Marcar como ausente
+
+        # 5. Calcular promedios mensuales (solo para evaluaciones válidas)
         for empleado_id, datos in resultados.items():
-            suma_porcentaje_total = datos['suma_porcentaje_total']
-            datos['porcentaje_final'] = (suma_porcentaje_total / 500) * 100
-            datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)
+            if datos['ausente']:
+                continue  # No calcular promedio si solo tiene evaluaciones ausentes
 
-        # 5. Obtener top 5 empleados
-        top_empleados = sorted(
-            [
+            porcentajes_semanales = []
+            for semana, valores in datos['semanas'].items():
+                suma_aspectos = valores['suma_aspectos']
+                porcentaje_semanal = (suma_aspectos / 500) * 100
+                porcentajes_semanales.append(porcentaje_semanal)
+            
+            if porcentajes_semanales:
+                datos['promedio_mensual'] = sum(porcentajes_semanales) / len(porcentajes_semanales)
+                datos['promedio_mensual'] = min(datos['promedio_mensual'], 100.0)
+
+        # 6. Preparar respuesta con TODAS las evaluaciones
+        response_data = {
+            'evaluaciones': [
                 {
-                    'nombre': datos['nombre'],
-                    'calificacion_final': round(datos['porcentaje_final'], 2)
+                    'id': eval.id,
+                    'empleado_id': eval.empleado_id,
+                    'fecha': eval.fecha_evaluacion.isoformat(),
+                    'porcentaje_total': float(eval.porcentaje_total),
+                    'ausente': bool(eval.ausente)  # Campo clave para el frontend
                 }
-                for empleado_id, datos in resultados.items()
+                for eval in evaluaciones  # Incluye todas
             ],
-            key=lambda x: x['calificacion_final'],
-            reverse=True
-        )[:5]
+            'resultados': [
+                {
+                    'empleado_id': emp_id,
+                    'nombre': datos['nombre'],
+                    'promedio_mensual': round(datos['promedio_mensual'], 2) if not datos['ausente'] else None,
+                    'ausente': datos['ausente']
+                }
+                for emp_id, datos in resultados.items()
+            ]
+        }
 
-        return jsonify({
-            'top_empleados': top_empleados
-        }), 200
+        return jsonify(response_data), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
