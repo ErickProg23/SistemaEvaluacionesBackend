@@ -732,6 +732,10 @@ def eliminar_todas_notificaciones():
         print(f"Error desactivando notificaciones: {str(e)}")
         return jsonify({"error": "Error al desactivar notificaciones"}), 500
 
+
+
+
+
 # --------------- OBTENCION DE EVALUACIONES ----------------------------------------------------------
 @routes_blueprint.route('/evaluaciones/todas', methods=['OPTIONS','GET'])
 def obtener_evaluaciones_todas():
@@ -749,78 +753,97 @@ def obtener_evaluaciones_todas():
             db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
         ).all()
 
-        # 3. Separar evaluaciones válidas y ausentes
-        evaluaciones_validas = [e for e in evaluaciones if e.ausente == 0]
-        evaluaciones_ausentes = [e for e in evaluaciones if e.ausente == 1]
+        # Obtener IDs de empleados únicos
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}
 
-        # 4. Procesar solo las evaluaciones válidas para cálculos
+        # 3. Consultar nombres de empleados
+        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+            Empleado.id.in_(empleado_ids)
+        ).all()
+        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+
+        # 4. Procesar datos
         resultados = defaultdict(lambda: {
-            'semanas': defaultdict(lambda: {'suma_aspectos': 0.0}),
-            'nombre': 'Nombre no encontrado',
-            'promedio_mensual': 0.0,
-            'ausente': False  # Indica si el empleado tiene solo evaluaciones ausentes
+            'suma_porcentaje_total': 0.0,
+            'porcentaje_final': 0.0,
+            'nombre': 'Nombre no encontrado'
         })
 
-        empleado_ids = {eval.empleado_id for eval in evaluaciones}  # Incluye todos los empleados
-        empleados_dict = {emp.id: emp.nombre for emp in Empleado.query.filter(Empleado.id.in_(empleado_ids)).all()}
-
-        # Procesar evaluaciones válidas
-        for eval in evaluaciones_validas:
+        for eval in evaluaciones:
             empleado_id = eval.empleado_id
-            semana = eval.fecha_evaluacion.isocalendar().week
-            resultados[empleado_id]['semanas'][semana]['suma_aspectos'] += float(eval.porcentaje_total)
+            resultados[empleado_id]['suma_porcentaje_total'] += float(eval.porcentaje_total)
             resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
 
-        # Procesar evaluaciones ausentes (solo para incluir en la respuesta)
-        for eval in evaluaciones_ausentes:
-            empleado_id = eval.empleado_id
-            if empleado_id not in resultados:
-                resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
-                resultados[empleado_id]['ausente'] = True  # Marcar como ausente
-
-        # 5. Calcular promedios mensuales (solo para evaluaciones válidas)
+        # Calcular porcentaje_final
         for empleado_id, datos in resultados.items():
-            if datos['ausente']:
-                continue  # No calcular promedio si solo tiene evaluaciones ausentes
+            suma_porcentaje_total = datos['suma_porcentaje_total']
+            datos['porcentaje_final'] = (suma_porcentaje_total / 500) * 100
+            datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)
 
-            porcentajes_semanales = []
-            for semana, valores in datos['semanas'].items():
-                suma_aspectos = valores['suma_aspectos']
-                porcentaje_semanal = (suma_aspectos / 500) * 100
-                porcentajes_semanales.append(porcentaje_semanal)
-            
-            if porcentajes_semanales:
-                datos['promedio_mensual'] = sum(porcentajes_semanales) / len(porcentajes_semanales)
-                datos['promedio_mensual'] = min(datos['promedio_mensual'], 100.0)
 
-        # 6. Preparar respuesta con TODAS las evaluaciones
-        response_data = {
-            'evaluaciones': [
+
+         # 5. Calcular promedios 
+        promedios = [min(datos['porcentaje_final'], 100.0) for datos in resultados.values()]
+        promedio_general = sum(promedios) / len(promedios) if promedios else 0
+
+        # 6. Formatear respuesta
+        from dateutil.relativedelta import relativedelta
+
+        fecha_inicio = datetime.strptime(fecha_reciente, '%Y-%m')
+        fecha_fin = fecha_inicio + relativedelta(months=1, days=-1)  # Último día del mes
+
+
+        return jsonify({
+            'promedio_general': round(promedio_general, 2),
+            'total_empleados': len(promedios),
+            'periodo':{
+                'inicio': fecha_inicio,
+                'fin': fecha_fin
+            },
+            'detalle_empleados':[
                 {
-                    'id': eval.id,
-                    'empleado_id': eval.empleado_id,
-                    'fecha': eval.fecha_evaluacion.isoformat(),
-                    'porcentaje_total': float(eval.porcentaje_total),
-                    'ausente': bool(eval.ausente)  # Campo clave para el frontend
-                }
-                for eval in evaluaciones  # Incluye todas
-            ],
-            'resultados': [
-                {
-                    'empleado_id': emp_id,
                     'nombre': datos['nombre'],
-                    'promedio_mensual': round(datos['promedio_mensual'], 2) if not datos['ausente'] else None,
-                    'ausente': datos['ausente']
-                }
-                for emp_id, datos in resultados.items()
+                    'empleado_id': emp_id,
+                    'calificacion_final': round(datos['porcentaje_final'], 2),
+                } for emp_id, datos in resultados.items()
             ]
-        }
-
-        return jsonify(response_data), 200
+            }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}),500
 
+
+@routes_blueprint.route('/evaluaciones/aspectos', methods=['OPTIONS', 'GET'])
+def obtener_promedio_aspectos():
+    try:
+        # Query con conversión a porcentaje
+        query = db.text("""
+            SELECT 
+                p.texto as aspecto,
+                COALESCE(ROUND((AVG(e.total_puntos) / 5) * 100, 2), 0.00) as porcentaje  -- Escala 0-5 → 0-100%
+            FROM 
+                pregunta p
+            LEFT JOIN 
+                evaluacion e ON p.texto = e.aspecto AND e.ausente = FALSE
+            GROUP BY 
+                p.id, p.texto
+            ORDER BY 
+                p.id;
+        """)
+
+        result = db.session.execute(query)
+        data = [
+            {
+                "aspecto": row.aspecto,
+                "porcentaje": float(row.porcentaje)  # Ej: 86.6
+            }
+            for row in result
+        ]
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @routes_blueprint.route('/evaluaciones', methods=['OPTIONS','GET'])
 def obtener_evaluaciones():
@@ -907,3 +930,189 @@ def obtener_evaluaciones():
 
     except Exception as e:
         return jsonify({'error': str(e)}),500
+
+
+# --------------- OBTENER EVALUACIONES COMPLETADAS POR ENCARGADO ----------------------------------------------------------
+@routes_blueprint.route('/evaluaciones/completadas/encargado', methods=['OPTIONS', 'GET'])
+def obtener_evaluaciones_completadas_encargado():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Consulta para obtener evaluaciones únicas (por empleado y fecha) donde a_tiempo=1
+        query = db.session.query(
+            Evaluacion.encargado_id,
+            Evaluacion.empleado_id,
+            func.date(Evaluacion.fecha_evaluacion),
+            func.count(Evaluacion.id).label('aspectos_count')
+        ).filter(
+            Evaluacion.a_tiempo == 1
+        ).group_by(
+            Evaluacion.encargado_id,
+            Evaluacion.empleado_id,
+            func.date(Evaluacion.fecha_evaluacion)
+        ).all()
+        
+        # Contar evaluaciones completas (donde todos los aspectos están presentes)
+        evaluaciones_por_encargado = {}
+        for encargado_id, empleado_id, fecha, aspectos_count in query:
+            # Consideramos una evaluación completa si tiene todos los aspectos (9)
+            if aspectos_count == 9:  # Asumiendo que cada evaluación completa tiene 9 aspectos
+                if encargado_id not in evaluaciones_por_encargado:
+                    evaluaciones_por_encargado[encargado_id] = 0
+                evaluaciones_por_encargado[encargado_id] += 1
+        
+        if not evaluaciones_por_encargado:
+            return jsonify({'message': 'No hay evaluaciones completadas fuera de tiempo'}), 404
+        
+        # Obtener los IDs de los encargados
+        encargado_ids = list(evaluaciones_por_encargado.keys())
+        
+        # Consultar los nombres de los encargados
+        encargados = Encargado.query.filter(Encargado.id.in_(encargado_ids)).all()
+        encargados_dict = {enc.id: enc.nombre for enc in encargados}
+        
+        # Preparar la respuesta
+        resultados = [
+            {
+                'encargado_id': encargado_id,
+                'nombre': encargados_dict.get(encargado_id, 'Nombre no encontrado'),
+                'evaluaciones_tarde': total_evaluaciones
+            }
+            for encargado_id, total_evaluaciones in evaluaciones_por_encargado.items()
+        ]
+        
+        return jsonify({'resultados': resultados}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# --------------- OBTENER EVALUACIONES FILTRADAS ----------------------------------------------------------
+@routes_blueprint.route('/evaluaciones/filtradas', methods=['OPTIONS', 'GET'])
+def obtener_evaluaciones_filtradas():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Obtener parámetros
+        encargado_id = request.args.get('encargado_id', 0, type=int)
+        periodo = request.args.get('periodo', 'mes')
+        fecha_seleccionada = request.args.get('fecha_seleccionada')
+        
+        # Validar parámetros
+        if not fecha_seleccionada:
+            return jsonify({'error': 'Se requiere fecha_seleccionada'}), 400
+            
+        if periodo not in ['año', 'mes', 'semana']:
+            return jsonify({'error': 'Periodo debe ser "año", "mes" o "semana"'}), 400
+        
+        # Calcular rango de fechas según el periodo
+        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo, fecha_seleccionada)
+        
+        if not fecha_inicio or not fecha_fin:
+            return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
+        
+        # Construir la consulta base
+        query = Evaluacion.query.filter(
+            Evaluacion.ausente == False,
+            Evaluacion.fecha_evaluacion >= fecha_inicio,
+            Evaluacion.fecha_evaluacion <= fecha_fin
+        )
+        
+        # Filtrar por encargado si es necesario
+        if encargado_id != 0:
+            query = query.filter(Evaluacion.encargado_id == encargado_id)
+        
+        # Ejecutar la consulta
+        evaluaciones = query.all()
+        
+        if not evaluaciones:
+            return jsonify({'message': 'No hay evaluaciones para los filtros seleccionados'}), 404
+        
+        # Calcular estadísticas
+        total_evaluaciones = len(evaluaciones)
+        suma_puntos = sum(float(eval.total_puntos) for eval in evaluaciones)
+        promedio_puntos = suma_puntos / total_evaluaciones if total_evaluaciones > 0 else 0
+        
+        # Formatear el periodo para la respuesta
+        periodo_formateado = formatear_periodo(periodo, fecha_inicio)
+        
+        # Preparar respuesta
+        response_data = {
+            'total_evaluaciones': total_evaluaciones,
+            'promedio_puntos': round(promedio_puntos, 2),
+            'periodo': periodo_formateado,
+            'rango_fechas': {
+                'inicio': fecha_inicio.isoformat(),
+                'fin': fecha_fin.isoformat()
+            }
+        }
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def calcular_rango_fechas(periodo, fecha_seleccionada):
+    """Calcula el rango de fechas basado en el periodo y la fecha seleccionada."""
+    try:
+        from dateutil.relativedelta import relativedelta
+        
+        if periodo == 'año':
+            # Formato esperado: YYYY
+            if not fecha_seleccionada.isdigit() or len(fecha_seleccionada) != 4:
+                return None, None
+                
+            año = int(fecha_seleccionada)
+            fecha_inicio = datetime(año, 1, 1)
+            fecha_fin = datetime(año, 12, 31, 23, 59, 59)
+            
+        elif periodo == 'mes':
+            # Formato esperado: YYYY-MM
+            if len(fecha_seleccionada.split('-')) != 2:
+                return None, None
+                
+            año, mes = map(int, fecha_seleccionada.split('-'))
+            fecha_inicio = datetime(año, mes, 1)
+            
+            # Último día del mes
+            if mes == 12:
+                fecha_fin = datetime(año + 1, 1, 1) - timedelta(seconds=1)
+            else:
+                fecha_fin = datetime(año, mes + 1, 1) - timedelta(seconds=1)
+                
+        elif periodo == 'semana':
+            # Formato esperado: YYYY-Www (ej: 2024-W07)
+            import re
+            if not re.match(r'^\d{4}-W\d{2}$', fecha_seleccionada):
+                return None, None
+                
+            año, semana = fecha_seleccionada.split('-W')
+            año = int(año)
+            semana = int(semana)
+            
+            # Primer día de la semana (lunes)
+            fecha_inicio = datetime.strptime(f'{año}-{semana}-1', '%Y-%W-%w')
+            # Último día de la semana (domingo)
+            fecha_fin = fecha_inicio + timedelta(days=6, hours=23, minutes=59, seconds=59)
+            
+        return fecha_inicio, fecha_fin
+        
+    except Exception as e:
+        print(f"Error calculando rango de fechas: {e}")
+        return None, None
+
+def formatear_periodo(periodo, fecha_inicio):
+    """Formatea el periodo para la respuesta según el tipo de periodo."""
+    if periodo == 'año':
+        return fecha_inicio.strftime('%Y')
+    elif periodo == 'mes':
+        return fecha_inicio.strftime('%Y-%m')
+    elif periodo == 'semana':
+        # ISO 8601 formato de semana: YYYY-Www
+        año = fecha_inicio.isocalendar()[0]
+        semana = fecha_inicio.isocalendar()[1]
+        return f"{año}-W{semana:02d}"
+    return ""
+

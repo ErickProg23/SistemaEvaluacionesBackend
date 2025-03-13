@@ -142,9 +142,10 @@ class Evaluacion(db.Model):
     comentarios = db.Column(db.String(255), nullable=False)
     aspecto = db.Column(db.String(255), nullable=False)
     ausente = db.Column(db.Boolean, default=True)
+    a_tiempo = db.Column(db.Boolean, default=True)
     
     def __repr__(self):
-        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}>'
+        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}>'
 
 class Notificacion(db.Model):
     __tablename__ = 'notificaciones'
