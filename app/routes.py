@@ -740,77 +740,79 @@ def eliminar_todas_notificaciones():
 @routes_blueprint.route('/evaluaciones/todas', methods=['OPTIONS','GET'])
 def obtener_evaluaciones_todas():
     try: 
-        # 1. Obtener el mes más reciente (incluyendo evaluaciones ausentes)
-        fecha_reciente = db.session.query(
-            db.func.max(db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m'))
-        ).scalar()  # ¡Sin filtrar por ausente!
-
-        if not fecha_reciente:
+        # Obtener todas las evaluaciones sin filtro de fecha, excluyendo ausentes
+        evaluaciones = Evaluacion.query.filter(Evaluacion.ausente == 0).all()
+        
+        if not evaluaciones:
             return jsonify({'error': 'No hay evaluaciones'}), 404
-
-        # 2. Obtener TODAS las evaluaciones del mes (ausentes y no ausentes)
-        evaluaciones = Evaluacion.query.filter(
-            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
-        ).all()
 
         # Obtener IDs de empleados únicos
         empleado_ids = {eval.empleado_id for eval in evaluaciones}
 
-        # 3. Consultar nombres de empleados
+        # Consultar nombres de empleados
         empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
             Empleado.id.in_(empleado_ids)
         ).all()
         empleados_dict = {emp.id: emp.nombre for emp in empleados}
 
-        # 4. Procesar datos
+        # Agrupar evaluaciones por empleado, encargado y fecha
+        # Esto permite identificar evaluaciones completas de diferentes encargados
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for eval in evaluaciones:
+            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            empleado_id = eval.empleado_id
+            encargado_id = eval.encargado_id
+            evaluaciones_agrupadas[empleado_id][encargado_id][fecha_str].append(eval)
+        
+        # Procesar datos por empleado
         resultados = defaultdict(lambda: {
             'suma_porcentaje_total': 0.0,
-            'porcentaje_final': 0.0,
+            'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado'
         })
+        
+        # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
+        for empleado_id, encargados in evaluaciones_agrupadas.items():
+            for encargado_id, fechas in encargados.items():
+                for fecha, evals in fechas.items():
+                    # Si hay 9 aspectos, consideramos que es una evaluación completa
+                    if len(evals) == 9:
+                        resultados[empleado_id]['total_evaluaciones_completas'] += 1
+                        # Sumar los porcentajes de todos los aspectos para esta evaluación
+                        suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
+                        resultados[empleado_id]['suma_porcentaje_total'] += suma_porcentaje
+                        resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
 
-        for eval in evaluaciones:
-            empleado_id = eval.empleado_id
-            resultados[empleado_id]['suma_porcentaje_total'] += float(eval.porcentaje_total)
-            resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
-
-        # Calcular porcentaje_final
+        # Calcular porcentaje_final correctamente
         for empleado_id, datos in resultados.items():
-            suma_porcentaje_total = datos['suma_porcentaje_total']
-            datos['porcentaje_final'] = (suma_porcentaje_total / 500) * 100
-            datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)
+            if datos['total_evaluaciones_completas'] > 0:
+                # Calcular el promedio de porcentaje final
+                # Cada evaluación completa suma 500 puntos (9 aspectos)
+                datos['porcentaje_final'] = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
+                datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)  # Limitar a 100%
+            else:
+                datos['porcentaje_final'] = 0.0
 
-
-
-         # 5. Calcular promedios 
-        promedios = [min(datos['porcentaje_final'], 100.0) for datos in resultados.values()]
+        # Calcular promedios solo de empleados con evaluaciones completas
+        promedios = [datos['porcentaje_final'] for datos in resultados.values() if datos['total_evaluaciones_completas'] > 0]
         promedio_general = sum(promedios) / len(promedios) if promedios else 0
 
-        # 6. Formatear respuesta
-        from dateutil.relativedelta import relativedelta
-
-        fecha_inicio = datetime.strptime(fecha_reciente, '%Y-%m')
-        fecha_fin = fecha_inicio + relativedelta(months=1, days=-1)  # Último día del mes
-
-
+        # Formatear respuesta
         return jsonify({
             'promedio_general': round(promedio_general, 2),
             'total_empleados': len(promedios),
-            'periodo':{
-                'inicio': fecha_inicio,
-                'fin': fecha_fin
-            },
             'detalle_empleados':[
                 {
                     'nombre': datos['nombre'],
                     'empleado_id': emp_id,
                     'calificacion_final': round(datos['porcentaje_final'], 2),
-                } for emp_id, datos in resultados.items()
+                    'total_evaluaciones': datos['total_evaluaciones_completas']
+                } for emp_id, datos in resultados.items() if datos['total_evaluaciones_completas'] > 0
             ]
-            }), 200
+        }), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}),500
+        return jsonify({'error': str(e)}), 500
 
 
 @routes_blueprint.route('/evaluaciones/aspectos', methods=['OPTIONS', 'GET'])
@@ -933,7 +935,7 @@ def obtener_evaluaciones():
 
 
 # --------------- OBTENER EVALUACIONES COMPLETADAS POR ENCARGADO ----------------------------------------------------------
-@routes_blueprint.route('/evaluaciones/completadas/encargado', methods=['OPTIONS', 'GET'])
+@routes_blueprint.route('/evaluaciones/completadasAtiempo', methods=['OPTIONS', 'GET'])
 def obtener_evaluaciones_completadas_encargado():
     if request.method == 'OPTIONS':
         return '', 200
@@ -1030,23 +1032,77 @@ def obtener_evaluaciones_filtradas():
         if not evaluaciones:
             return jsonify({'message': 'No hay evaluaciones para los filtros seleccionados'}), 404
         
-        # Calcular estadísticas
-        total_evaluaciones = len(evaluaciones)
-        suma_puntos = sum(float(eval.total_puntos) for eval in evaluaciones)
-        promedio_puntos = suma_puntos / total_evaluaciones if total_evaluaciones > 0 else 0
+        # Obtener IDs de empleados únicos
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}
+        
+        # Consultar nombres de empleados
+        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+            Empleado.id.in_(empleado_ids)
+        ).all()
+        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+        
+        # Agrupar evaluaciones por empleado y fecha (para identificar evaluaciones completas)
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
+        for eval in evaluaciones:
+            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            empleado_id = eval.empleado_id
+            evaluaciones_agrupadas[empleado_id][fecha_str].append(eval)
+        
+        # Procesar datos por empleado
+        resultados_empleados = defaultdict(lambda: {
+            'suma_porcentaje_total': 0.0,
+            'total_evaluaciones_completas': 0,
+            'nombre': 'Nombre no encontrado'
+        })
+        
+        # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
+        for empleado_id, fechas in evaluaciones_agrupadas.items():
+            for fecha, evals in fechas.items():
+                # Si hay 9 aspectos, consideramos que es una evaluación completa
+                if len(evals) == 9:
+                    resultados_empleados[empleado_id]['total_evaluaciones_completas'] += 1
+                    # Sumar los porcentajes de todos los aspectos para esta evaluación
+                    suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
+                    resultados_empleados[empleado_id]['suma_porcentaje_total'] += suma_porcentaje
+                    resultados_empleados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+        
+        # Calcular calificación final por empleado (promedio de sus evaluaciones completas)
+        detalle_empleados = []
+        for empleado_id, datos in resultados_empleados.items():
+            if datos['total_evaluaciones_completas'] > 0:
+                # Calcular el promedio de porcentaje final (suma de porcentajes / (500 * número de evaluaciones))
+                porcentaje_final = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
+                porcentaje_final = min(porcentaje_final, 100.0)  # Limitar a 100%
+                
+                detalle_empleados.append({
+                    'empleado_id': empleado_id,
+                    'nombre': datos['nombre'],
+                    'calificacion_final': round(porcentaje_final, 2),
+                    'total_evaluaciones': datos['total_evaluaciones_completas']
+                })
+        
+        # Ordenar por calificación final de mayor a menor
+        detalle_empleados.sort(key=lambda x: x['calificacion_final'], reverse=True)
+        
+        # Calcular promedio general de todos los empleados
+        if detalle_empleados:
+            promedio_general = sum(emp['calificacion_final'] for emp in detalle_empleados) / len(detalle_empleados)
+        else:
+            promedio_general = 0
         
         # Formatear el periodo para la respuesta
         periodo_formateado = formatear_periodo(periodo, fecha_inicio)
         
         # Preparar respuesta
         response_data = {
-            'total_evaluaciones': total_evaluaciones,
-            'promedio_puntos': round(promedio_puntos, 2),
+            'total_empleados': len(detalle_empleados),
+            'promedio_general': round(promedio_general, 2),
             'periodo': periodo_formateado,
             'rango_fechas': {
                 'inicio': fecha_inicio.isoformat(),
                 'fin': fecha_fin.isoformat()
-            }
+            },
+            'detalle_empleados': detalle_empleados
         }
         
         return jsonify(response_data), 200
