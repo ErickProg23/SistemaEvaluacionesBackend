@@ -1490,7 +1490,16 @@ def obtener_evaluaciones_empleado(empleado_id):
         # Agrupar evaluaciones por fecha y encargado
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
-            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            # Check if fecha_evaluacion is a datetime or date object
+            fecha_local = eval.fecha_evaluacion
+            if isinstance(fecha_local, datetime):
+                # Only try to handle timezone if it's a datetime object
+                if fecha_local.tzinfo is not None:
+                    # If the date has timezone info, convert to local timezone
+                    fecha_local = fecha_local.astimezone(pytz.timezone('America/Mexico_City'))
+            
+            # Format the date as string
+            fecha_str = fecha_local.strftime('%Y-%m-%d')
             encargado_id = eval.encargado_id
             evaluaciones_agrupadas[fecha_str][encargado_id].append(eval)
         
