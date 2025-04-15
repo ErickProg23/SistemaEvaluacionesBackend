@@ -1,10 +1,10 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, make_response
 from flask_jwt_extended import create_access_token, jwt_required
 from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion, Notificacion
 from flask_cors import CORS
 from app import db
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from sqlalchemy import func, update
 import pytz
 from . import jwt, bcrypt  # Asegúrate de que `bcrypt` esté configurado en tu archivo principal
@@ -1101,7 +1101,8 @@ def obtener_evaluaciones_todas_con_encargados():
             'suma_porcentaje_total': 0.0,
             'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado',
-            'encargados': {}  # Diccionario para almacenar encargados y sus evaluaciones
+            'encargados': {},  # Diccionario para almacenar encargados y sus evaluaciones
+            'fechas_evaluaciones': []  # Lista para almacenar las fechas de evaluaciones completas
         })
         
         # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
@@ -1111,7 +1112,8 @@ def obtener_evaluaciones_todas_con_encargados():
                 if encargado_id not in resultados[empleado_id]['encargados']:
                     resultados[empleado_id]['encargados'][encargado_id] = {
                         'nombre': encargados_dict.get(encargado_id, 'Nombre no encontrado'),
-                        'evaluaciones': 0
+                        'evaluaciones': 0,
+                        'fechas_evaluaciones': []  # Lista para almacenar fechas por encargado
                     }
                 
                 for fecha, evals in fechas.items():
@@ -1119,6 +1121,10 @@ def obtener_evaluaciones_todas_con_encargados():
                     if len(evals) == 9:
                         resultados[empleado_id]['total_evaluaciones_completas'] += 1
                         resultados[empleado_id]['encargados'][encargado_id]['evaluaciones'] += 1
+                        
+                        # Guardar la fecha de la evaluación completa
+                        resultados[empleado_id]['fechas_evaluaciones'].append(fecha)
+                        resultados[empleado_id]['encargados'][encargado_id]['fechas_evaluaciones'].append(fecha)
                         
                         # Sumar los porcentajes de todos los aspectos para esta evaluación
                         suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
@@ -1148,11 +1154,13 @@ def obtener_evaluaciones_todas_con_encargados():
                     'empleado_id': emp_id,
                     'calificacion_final': round(datos['porcentaje_final'], 2),
                     'total_evaluaciones': datos['total_evaluaciones_completas'],
+                    'fechas_evaluaciones': datos['fechas_evaluaciones'],  # Incluir fechas de evaluaciones
                     'encargados': [
                         {
                             'encargado_id': enc_id,
                             'nombre': enc_data['nombre'],
-                            'evaluaciones_realizadas': enc_data['evaluaciones']
+                            'evaluaciones_realizadas': enc_data['evaluaciones'],
+                            'fechas_evaluaciones': enc_data['fechas_evaluaciones']  # Incluir fechas por encargado
                         } for enc_id, enc_data in datos['encargados'].items()
                     ]
                 } for emp_id, datos in resultados.items() if datos['total_evaluaciones_completas'] > 0
@@ -1371,25 +1379,119 @@ def obtener_evaluaciones_completadas_encargado():
 def obtener_evaluaciones_filtradas():
     if request.method == 'OPTIONS':
         return '', 200
+
     
     try:
+        print("\n=== PARÁMETROS RECIBIDOS ===")
+        print(f"encargado_id: {request.args.get('encargado_id')}")
+        print(f"periodo_tipo (original): {request.args.get('periodo_tipo')}")
+        print(f"periodo_valor: {request.args.get('periodo_valor')}")
+
         # Obtener parámetros
         encargado_id = request.args.get('encargado_id', 0, type=int)
-        periodo = request.args.get('periodo', 'mes')
-        fecha_seleccionada = request.args.get('fecha_seleccionada')
+        periodo = request.args.get('periodo_tipo', 'mes')
+        periodo_valor = request.args.get('periodo_valor')
+        current_year = datetime.now().year
+
+        print(f"\n=== VALORES PROCESADOS ===")
+        print(f"periodo (lowercase): {periodo}")
+        print(f"current_year: {current_year}")
         
         # Validar parámetros
-        if not fecha_seleccionada:
-            return jsonify({'error': 'Se requiere fecha_seleccionada'}), 400
-            
-        if periodo not in ['año', 'mes', 'semana']:
-            return jsonify({'error': 'Periodo debe ser "año", "mes" o "semana"'}), 400
+        if not periodo_valor:
+            print("\n[ERROR] Falta periodo_valor")
+            return jsonify({'error': 'Se requiere periodo_valor'}), 400
+
+        # Mapear periodo a español
+        periodo_mapeado = {
+            'month': 'mes',
+            'year': 'año',
+            'week': 'semana',
+            'mes': 'mes',  # Compatibilidad con español
+            'año': 'año',
+            'semana': 'semana'
+        }.get(periodo, None)
+
+        print(f"periodo_mapeado: {periodo_mapeado}")
+
+        if not periodo_mapeado:
+            return jsonify({'error': 'Periodo no válido. Use "month", "year" o "week".'}), 400
+
+       # Generar fecha_seleccionada según el periodo
+        try:
+            print("\n=== PROCESANDO FECHA ===")
+            print(f"Tipo de periodo: {periodo_mapeado}")
+            print(f"Valor recibido: {periodo_valor}")
+
+            if periodo_mapeado == 'mes':
+                 # Si el valor es solo el mes (ej: "05" o "4")
+                if periodo_valor.isdigit() and '-' not in periodo_valor:
+                    print(f"Caso: Solo mes ({periodo_valor})")
+                    year = current_year
+                    month = int(periodo_valor)
+                    fecha_seleccionada = date(year, month, 1)
+                else:
+                    # Si en algún caso envía "YYYY-MM"
+                    print("Caso: Año-mes (YYYY-MM)")
+                    try:
+                        year, month = map(int, periodo_valor.split('-'))
+                        fecha_seleccionada = date(year, month, 1)
+                    except ValueError:
+                        raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
+            elif periodo_mapeado == 'año':
+                # El valor es el año (ej: "2023")
+                print("Caso: Año completo")
+                year = int(periodo_valor)
+                fecha_seleccionada = date(year, 1, 1)  # 1 de enero
+            elif periodo_mapeado == 'semana':
+                try:
+                    if '-' not in periodo_valor:
+                        print("Caso: Solo número de semana")
+                        # Caso 1: Solo el número de semana (ej: "15")
+                        year = current_year  # Año actual
+                        week = int(periodo_valor)
+                        print(f"Semana inferida: {year}-W{week:02d}")
+                    else:
+                        # Caso 2: Formato YYYY-Www (ej: "2024-W15")
+                        # Verificar que el formato sea correcto
+                        if not periodo_valor.startswith('W') and 'W' in periodo_valor:
+                            parts = periodo_valor.split('-W')
+                            if len(parts) != 2:
+                                raise ValueError("Formato inválido para semana. Use YYYY-Www (ej: 2024-W15)")
+                            year = int(parts[0])
+                            week = int(parts[1])
+                        else:
+                            raise ValueError("Formato inválido para semana. Use YYYY-Www o solo el número de semana")
+                    
+                    # Validar rango de la semana
+                    if week < 1 or week > 53:
+                        raise ValueError("Semana debe estar entre 1 y 53")
+                    
+                    fecha_seleccionada = datetime.fromisocalendar(year, week, 1).date()
+                
+                except ValueError as e:
+                    return jsonify({'error': f'Error en semana: {str(e)}'}), 400
+        except ValueError as e:
+            print(f"\n[ERROR NO CONTROLADO] {str(e)}")
+            return jsonify({'error': f'Error: {str(e)}'}), 400
+
         
-        # Calcular rango de fechas según el periodo
-        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo, fecha_seleccionada)
+         # Validaciones adicionales
+        if periodo_mapeado == 'mes' and not (1 <= fecha_seleccionada.month <= 12):
+            return jsonify({'error': 'Mes inválido (debe ser 1-12)'}), 400
+
+        if periodo_mapeado == 'semana' and not (1 <= fecha_seleccionada.isocalendar()[0] <= 53):
+            return jsonify({'error': 'Semana inválida (1-53)'}), 400
+
+        if periodo_mapeado == 'año' and not (2000 <= fecha_seleccionada.year <= 2100):
+            return jsonify({'error': 'Año inválido (2000-2100)'}), 400
+
+        # Calcular rango de fechas
+        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
         
         if not fecha_inicio or not fecha_fin:
             return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
+        
         
         # Construir la consulta base
         query = Evaluacion.query.filter(
@@ -1486,26 +1588,285 @@ def obtener_evaluaciones_filtradas():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@routes_blueprint.route('/evaluaciones/exportar-csv', methods=['OPTIONS', 'GET'])
+def exportar_evaluaciones_csv():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        print("\n=== PARÁMETROS RECIBIDOS PARA EXPORTACIÓN ===")
+        print(f"periodo_tipo: {request.args.get('periodo_tipo')}")
+        print(f"periodo_valor: {request.args.get('periodo_valor')}")
+        print(f"agrupar: {request.args.get('agrupar', 'false')}")
+
+        # Obtener parámetros
+        periodo = request.args.get('periodo_tipo', 'mes')
+        periodo_valor = request.args.get('periodo_valor')
+        agrupar = request.args.get('agrupar', 'false').lower() == 'true'  # Nuevo parámetro para agrupar
+        current_year = datetime.now().year
+        
+        # Validar parámetros
+        if not periodo_valor:
+            return jsonify({'error': 'Se requiere periodo_valor'}), 400
+
+        # Mapear periodo a español
+        periodo_mapeado = {
+            'month': 'mes',
+            'year': 'año',
+            'week': 'semana',
+            'mes': 'mes',  # Compatibilidad con español
+            'año': 'año',
+            'semana': 'semana'
+        }.get(periodo, None)
+
+        if not periodo_mapeado:
+            return jsonify({'error': 'Periodo no válido. Use "month", "year" o "week".'}), 400
+
+        # Generar fecha_seleccionada según el periodo
+        try:
+            if periodo_mapeado == 'mes':
+                # Si el valor es solo el mes (ej: "05" o "4")
+                if periodo_valor.isdigit() and '-' not in periodo_valor:
+                    year = current_year
+                    month = int(periodo_valor)
+                    fecha_seleccionada = date(year, month, 1)
+                else:
+                    # Si en algún caso envía "YYYY-MM"
+                    try:
+                        year, month = map(int, periodo_valor.split('-'))
+                        fecha_seleccionada = date(year, month, 1)
+                    except ValueError:
+                        raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
+            elif periodo_mapeado == 'año':
+                # El valor es el año (ej: "2023")
+                year = int(periodo_valor)
+                fecha_seleccionada = date(year, 1, 1)  # 1 de enero
+            elif periodo_mapeado == 'semana':
+                try:
+                    if '-' not in periodo_valor:
+                        # Caso 1: Solo el número de semana (ej: "15")
+                        year = current_year  # Año actual
+                        week = int(periodo_valor)
+                    else:
+                        # Caso 2: Formato YYYY-Www (ej: "2024-W15")
+                        # Verificar que el formato sea correcto
+                        if not periodo_valor.startswith('W') and 'W' in periodo_valor:
+                            parts = periodo_valor.split('-W')
+                            if len(parts) != 2:
+                                raise ValueError("Formato inválido para semana. Use YYYY-Www (ej: 2024-W15)")
+                            year = int(parts[0])
+                            week = int(parts[1])
+                        else:
+                            raise ValueError("Formato inválido para semana. Use YYYY-Www o solo el número de semana")
+                    
+                    # Validar rango de la semana
+                    if week < 1 or week > 53:
+                        raise ValueError("Semana debe estar entre 1 y 53")
+                    
+                    fecha_seleccionada = datetime.fromisocalendar(year, week, 1).date()
+                
+                except ValueError as e:
+                    return jsonify({'error': f'Error en semana: {str(e)}'}), 400
+        except ValueError as e:
+            return jsonify({'error': f'Error: {str(e)}'}), 400
+
+        # Validaciones adicionales
+        if periodo_mapeado == 'mes' and not (1 <= fecha_seleccionada.month <= 12):
+            return jsonify({'error': 'Mes inválido (debe ser 1-12)'}), 400
+
+        if periodo_mapeado == 'semana' and not (1 <= fecha_seleccionada.isocalendar()[1] <= 53):
+            return jsonify({'error': 'Semana inválida (1-53)'}), 400
+
+        if periodo_mapeado == 'año' and not (2000 <= fecha_seleccionada.year <= 2100):
+            return jsonify({'error': 'Año inválido (2000-2100)'}), 400
+
+        # Calcular rango de fechas
+        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
+        
+        if not fecha_inicio or not fecha_fin:
+            return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
+        
+        # Construir la consulta base para obtener todas las evaluaciones en el rango
+        query = Evaluacion.query.filter(
+            Evaluacion.fecha_evaluacion >= fecha_inicio,
+            Evaluacion.fecha_evaluacion <= fecha_fin
+        ).order_by(Evaluacion.empleado_id, Evaluacion.fecha_evaluacion)
+        
+        # Ejecutar la consulta
+        evaluaciones = query.all()
+        
+        if not evaluaciones:
+            return jsonify({'message': 'No hay evaluaciones para los filtros seleccionados'}), 404
+        
+        # Obtener IDs de empleados y encargados únicos
+        empleado_ids = {eval.empleado_id for eval in evaluaciones}
+        encargado_ids = {eval.encargado_id for eval in evaluaciones}
+        
+        # Consultar nombres de empleados
+        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+            Empleado.id.in_(empleado_ids)
+        ).all()
+        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+        
+        # Consultar nombres de encargados
+        encargados = db.session.query(Encargado.id, Encargado.nombre).filter(
+            Encargado.id.in_(encargado_ids)
+        ).all()
+        encargados_dict = {enc.id: enc.nombre for enc in encargados}
+        
+        # Agrupar evaluaciones por empleado, fecha y encargado
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for eval in evaluaciones:
+            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            empleado_id = eval.empleado_id
+            encargado_id = eval.encargado_id
+            evaluaciones_agrupadas[empleado_id][fecha_str][encargado_id].append(eval)
+
+        # Calcular promedios para evaluaciones completas (9 aspectos)
+        promedios_evaluaciones = {}  # (empleado_id, fecha, encargado_id) -> promedio
+        for empleado_id, fechas in evaluaciones_agrupadas.items():
+            for fecha, encargados in fechas.items():
+                for encargado_id, evals in encargados.items():
+                    # Si hay 9 aspectos, consideramos que es una evaluación completa
+                    if len(evals) == 9:
+                        # Sumar los porcentajes de todos los aspectos para esta evaluación
+                        suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
+                        # Calcular promedio (sobre 100%)
+                        promedio = (suma_porcentaje / 500) * 100
+                        # Guardar el promedio
+                        promedios_evaluaciones[(empleado_id, fecha, encargado_id)] = round(promedio, 2)
+
+        # Preparar datos para exportación CSV
+        datos_exportacion = []
+        
+        if agrupar:
+            # Exportar evaluaciones agrupadas (1 fila por evaluación completa)
+            for empleado_id, fechas in evaluaciones_agrupadas.items():
+                for fecha, encargados in fechas.items():
+                    for encargado_id, evals in encargados.items():
+                        # Solo incluir evaluaciones completas (9 aspectos)
+                        if len(evals) == 9:
+                            # Calcular promedio
+                            promedio = promedios_evaluaciones.get((empleado_id, fecha, encargado_id), 0)
+                            
+                            # Verificar si hay ausencia
+                            ausente = any(eval.ausente for eval in evals)
+                            
+                            # Verificar si está a tiempo
+                            a_tiempo = all(eval.a_tiempo for eval in evals)
+                            
+                            # Obtener comentarios (normalmente son iguales para todos los aspectos)
+                            comentarios = evals[0].comentarios if evals else ""
+                            
+                            # Crear una fila para la evaluación completa
+                            datos_exportacion.append({
+                                'Fecha': fecha,
+                                'Nombre Empleado': empleados_dict.get(empleado_id, 'Desconocido'),
+                                'Nombre Encargado': encargados_dict.get(encargado_id, 'Desconocido'),
+                                'Calificación Promedio': promedio,
+                                'Comentarios': comentarios
+                            })
+        else:
+            # Exportar todos los aspectos individuales (formato original)
+            for eval in evaluaciones:
+                fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+                empleado_id = eval.empleado_id
+                encargado_id = eval.encargado_id
+                
+                # Obtener el promedio si existe (evaluación completa)
+                promedio = promedios_evaluaciones.get((empleado_id, fecha_str, encargado_id), None)
+                
+                datos_exportacion.append({
+                    'Fecha': fecha_str,
+                    'Nombre Empleado': empleados_dict.get(empleado_id, 'Desconocido'),
+                    'Nombre Encargado': encargados_dict.get(encargado_id, 'Desconocido'),
+                    'Puntuación': eval.total_puntos,
+                    'Porcentaje': eval.porcentaje_total,
+                    'Promedio Evaluación': promedio if promedio is not None else 'N/A'
+                })
+        
+        # Formatear el periodo para la respuesta
+        periodo_formateado = formatear_periodo(periodo, fecha_inicio)
+        
+        # Preparar respuesta con metadatos
+        response_data = {
+            'periodo': periodo_formateado,
+            'rango_fechas': {
+                'inicio': fecha_inicio.strftime('%Y-%m-%d'),
+                'fin': fecha_fin.strftime('%Y-%m-%d')
+            },
+            'total_registros': len(datos_exportacion),
+            'agrupado': agrupar,
+            'datos': datos_exportacion
+        }
+        
+        formato = request.args.get('formato', 'json')
+        
+        if formato.lower() == 'csv':
+            # Generate CSV directly
+            import csv
+            import io
+            
+            # Create a string buffer for the CSV data
+            output = io.StringIO()
+            
+            # Get field names from the first item
+            if datos_exportacion:
+                fieldnames = list(datos_exportacion[0].keys())
+                
+                # Create CSV writer
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                
+                # Write header and rows
+                writer.writeheader()
+                writer.writerows(datos_exportacion)
+                
+                # Get the CSV data as a string
+                csv_data = output.getvalue()
+                
+                # Create response with CSV data
+                response = make_response(csv_data)
+                response.headers['Content-Type'] = 'text/csv'
+                response.headers['Content-Disposition'] = f'attachment; filename=evaluaciones_{periodo_formateado}.csv'
+                
+                return response
+            else:
+                return jsonify({'error': 'No hay datos para exportar'}), 404
+        
+        # If not CSV, return JSON as before
+        response_data = {
+            'periodo': periodo_formateado,
+            'rango_fechas': {
+                'inicio': fecha_inicio.strftime('%Y-%m-%d'),
+                'fin': fecha_fin.strftime('%Y-%m-%d')
+            },
+            'total_registros': len(datos_exportacion),
+            'agrupado': agrupar,
+            'datos': datos_exportacion
+        }
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        print(f"Error en exportación CSV: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+        
+
 def calcular_rango_fechas(periodo, fecha_seleccionada):
     """Calcula el rango de fechas basado en el periodo y la fecha seleccionada."""
     try:
         from dateutil.relativedelta import relativedelta
         
         if periodo == 'año':
-            # Formato esperado: YYYY
-            if not fecha_seleccionada.isdigit() or len(fecha_seleccionada) != 4:
-                return None, None
-                
-            año = int(fecha_seleccionada)
+            # Para año, usamos el año de la fecha_seleccionada
+            año = fecha_seleccionada.year
             fecha_inicio = datetime(año, 1, 1)
             fecha_fin = datetime(año, 12, 31, 23, 59, 59)
             
         elif periodo == 'mes':
-            # Formato esperado: YYYY-MM
-            if len(fecha_seleccionada.split('-')) != 2:
-                return None, None
-                
-            año, mes = map(int, fecha_seleccionada.split('-'))
+            # Para mes, usamos el año y mes de la fecha_seleccionada
+            año = fecha_seleccionada.year
+            mes = fecha_seleccionada.month
             fecha_inicio = datetime(año, mes, 1)
             
             # Último día del mes
@@ -1515,17 +1876,9 @@ def calcular_rango_fechas(periodo, fecha_seleccionada):
                 fecha_fin = datetime(año, mes + 1, 1) - timedelta(seconds=1)
                 
         elif periodo == 'semana':
-            # Formato esperado: YYYY-Www (ej: 2024-W07)
-            import re
-            if not re.match(r'^\d{4}-W\d{2}$', fecha_seleccionada):
-                return None, None
-                
-            año, semana = fecha_seleccionada.split('-W')
-            año = int(año)
-            semana = int(semana)
-            
-            # Primer día de la semana (lunes)
-            fecha_inicio = datetime.strptime(f'{año}-{semana}-1', '%Y-%W-%w')
+            # Para semana, usamos la fecha_seleccionada directamente
+            # que ya debe ser el primer día de la semana
+            fecha_inicio = datetime.combine(fecha_seleccionada, datetime.min.time())
             # Último día de la semana (domingo)
             fecha_fin = fecha_inicio + timedelta(days=6, hours=23, minutes=59, seconds=59)
             
@@ -1643,58 +1996,110 @@ def obtener_evaluaciones_empleado(empleado_id):
         return '', 200
     
     try:
-        # Obtener parámetros de filtro
-        periodo = request.args.get('periodo', 'mes')  # Valores posibles: 'mes', 'semana', 'año'
-        fecha_str = request.args.get('fecha')  # Formato esperado: YYYY-MM-DD
+        # Obtener parámetros de filtro con nuevos nombres
+        periodo = request.args.get('periodo_tipo', 'mes')  # Valores posibles: 'month', 'week', 'year'
+        periodo_valor = request.args.get('periodo_valor')  # Puede ser "3" para marzo, "2024-03", "15" para semana, etc.
+        current_year = datetime.now().year
         
         # Validar que el empleado existe
         empleado = Empleado.query.get(empleado_id)
         if not empleado:
             return jsonify({'error': 'Empleado no encontrado'}), 404
         
-        # Construir la consulta base
-        query = Evaluacion.query.filter(Evaluacion.empleado_id == empleado_id)
-        
-        # Aplicar filtro de fecha si se proporciona
-        if fecha_str:
-            try:
-                fecha_base = datetime.strptime(fecha_str, '%Y-%m-%d')
+        # Mapear periodo a español
+        periodo_mapeado = {
+            'month': 'mes',
+            'year': 'año',
+            'week': 'semana',
+            'mes': 'mes',
+            'año': 'año',
+            'semana': 'semana'
+        }.get(periodo, None)
+
+        if not periodo_mapeado:
+            return jsonify({'error': 'Periodo no válido. Use "month", "year" o "week".'}), 400
+            
+        # Generar fecha_seleccionada según el periodo
+        try:
+            if periodo_mapeado == 'mes':
+                # Si el valor es solo el mes (ej: "05" o "4")
+                if periodo_valor and periodo_valor.isdigit() and '-' not in periodo_valor:
+                    year = current_year
+                    month = int(periodo_valor)
+                    fecha_seleccionada = date(year, month, 1)
+                else:
+                    # Si en algún caso envía "YYYY-MM"
+                    try:
+                        year, month = map(int, periodo_valor.split('-'))
+                        fecha_seleccionada = date(year, month, 1)
+                    except (ValueError, AttributeError):
+                        raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
+            elif periodo_mapeado == 'año':
+                # El valor es el año (ej: "2023")
+                year = int(periodo_valor)
+                fecha_seleccionada = date(year, 1, 1)  # 1 de enero
+            elif periodo_mapeado == 'semana':
+                try:
+                    if '-' not in periodo_valor:
+                        # Caso 1: Solo el número de semana (ej: "15")
+                        year = current_year  # Año actual
+                        week = int(periodo_valor)
+                    else:
+                        # Caso 2: Formato YYYY-Www (ej: "2024-W15")
+                        # Verificar que el formato sea correcto
+                        if not periodo_valor.startswith('W') and 'W' in periodo_valor:
+                            parts = periodo_valor.split('-W')
+                            if len(parts) != 2:
+                                raise ValueError("Formato inválido para semana. Use YYYY-Www (ej: 2024-W15)")
+                            year = int(parts[0])
+                            week = int(parts[1])
+                        else:
+                            raise ValueError("Formato inválido para semana. Use YYYY-Www o solo el número de semana")
+                    
+                    # Validar rango de la semana
+                    if week < 1 or week > 53:
+                        raise ValueError("Semana debe estar entre 1 y 53")
+                    
+                    fecha_seleccionada = datetime.fromisocalendar(year, week, 1).date()
                 
-                if periodo == 'semana':
-                    # Calcular inicio y fin de la semana
-                    inicio_semana = fecha_base - timedelta(days=fecha_base.weekday())
-                    fin_semana = inicio_semana + timedelta(days=6)
-                    query = query.filter(
-                        Evaluacion.fecha_evaluacion >= inicio_semana,
-                        Evaluacion.fecha_evaluacion <= fin_semana
-                    )
-                elif periodo == 'mes':
-                    # Filtrar por mes
-                    query = query.filter(
-                        db.func.year(Evaluacion.fecha_evaluacion) == fecha_base.year,
-                        db.func.month(Evaluacion.fecha_evaluacion) == fecha_base.month
-                    )
-                elif periodo == 'año':
-                    # Filtrar por año
-                    query = query.filter(
-                        db.func.year(Evaluacion.fecha_evaluacion) == fecha_base.year
-                    )
-            except ValueError:
-                return jsonify({'error': 'Formato de fecha inválido. Use YYYY-MM-DD'}), 400
-        else:
-            # Si no se proporciona fecha, usar el mes actual
+                except ValueError as e:
+                    return jsonify({'error': f'Error en semana: {str(e)}'}), 400
+        except ValueError as e:
+            # Si hay error o no se proporciona periodo_valor, usar el mes actual
             hoy = datetime.now()
-            query = query.filter(
-                db.func.year(Evaluacion.fecha_evaluacion) == hoy.year,
-                db.func.month(Evaluacion.fecha_evaluacion) == hoy.month
-            )
+            fecha_seleccionada = date(hoy.year, hoy.month, 1)
+            periodo_mapeado = 'mes'  # Forzar a mes como valor predeterminado
+
+        # Calcular rango de fechas usando la función existente
+        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
+        
+        if not fecha_inicio or not fecha_fin:
+            return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
+        
+        # Construir la consulta base
+        query = Evaluacion.query.filter(
+            Evaluacion.empleado_id == empleado_id,
+            Evaluacion.fecha_evaluacion >= fecha_inicio,
+            Evaluacion.fecha_evaluacion <= fecha_fin
+        )
         
         # Ejecutar la consulta
         evaluaciones = query.order_by(Evaluacion.fecha_evaluacion.desc()).all()
         
         if not evaluaciones:
-            return jsonify({'message': 'No hay evaluaciones para este empleado en el período seleccionado'}), 200
+            return jsonify({
+                'empleado_id': empleado_id,
+                'empleado_nombre': empleado.nombre,
+                'periodo': formatear_periodo(periodo_mapeado, fecha_seleccionada),
+                'rango_fechas': {
+                    'inicio': fecha_inicio.strftime('%Y-%m-%d'),
+                    'fin': fecha_fin.strftime('%Y-%m-%d')
+                },
+                'message': 'No hay evaluaciones para este empleado en el período seleccionado',
+                'evaluaciones': []
+            }), 200
         
+        # El resto de la función permanece igual
         # Agrupar evaluaciones por fecha y encargado
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
@@ -1760,9 +2165,17 @@ def obtener_evaluaciones_empleado(empleado_id):
                         'aspectos': aspectos
                     })
         
+        # Formatear el periodo para la respuesta
+        periodo_formateado = formatear_periodo(periodo_mapeado, fecha_seleccionada)
+        
         return jsonify({
             'empleado_id': empleado_id,
             'empleado_nombre': empleado.nombre,
+            'periodo': periodo_formateado,
+            'rango_fechas': {
+                'inicio': fecha_inicio.strftime('%Y-%m-%d'),
+                'fin': fecha_fin.strftime('%Y-%m-%d')
+            },
             'evaluaciones': resultados
         }), 200
         
