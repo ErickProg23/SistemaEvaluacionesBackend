@@ -777,6 +777,7 @@ def guardar_evaluacion():
         data = request.json
         payload = data.get('payload')
         id_encargado = data.get('idEncargado')
+        num_semana = data.get('num_semana')
 
         # Validar que los datos necesarios estén presentes
         if not payload or not id_encargado:
@@ -813,7 +814,8 @@ def guardar_evaluacion():
                     total_puntos=calificacion,  # Calificación del aspecto
                     porcentaje_total=porcentaje,  # Porcentaje ponderado
                     comentarios=comentarios,  # Comentarios generales
-                    ausente=ausente_db  # Guardar 1 si está ausente, 0 si no
+                    ausente=ausente_db,  # Guardar 1 si está ausente, 0 si no
+                    num_semana=num_semana  # Guardar el número de semana
                 )
 
                 # Guardar en la base de datos
@@ -1102,7 +1104,8 @@ def obtener_evaluaciones_todas_con_encargados():
             'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado',
             'encargados': {},  # Diccionario para almacenar encargados y sus evaluaciones
-            'fechas_evaluaciones': []  # Lista para almacenar las fechas de evaluaciones completas
+            'fechas_evaluaciones': [],  # Lista para almacenar las fechas de evaluaciones completas
+            'semanas_evaluaciones': []  # Lista para almacenar las semanas de evaluaciones completas
         })
         
         # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
@@ -1113,7 +1116,8 @@ def obtener_evaluaciones_todas_con_encargados():
                     resultados[empleado_id]['encargados'][encargado_id] = {
                         'nombre': encargados_dict.get(encargado_id, 'Nombre no encontrado'),
                         'evaluaciones': 0,
-                        'fechas_evaluaciones': []  # Lista para almacenar fechas por encargado
+                        'fechas_evaluaciones': [],  # Lista para almacenar fechas por encargado
+                        'semanas_evaluaciones': []  # Lista para almacenar semanas por encargado
                     }
                 
                 for fecha, evals in fechas.items():
@@ -1125,6 +1129,12 @@ def obtener_evaluaciones_todas_con_encargados():
                         # Guardar la fecha de la evaluación completa
                         resultados[empleado_id]['fechas_evaluaciones'].append(fecha)
                         resultados[empleado_id]['encargados'][encargado_id]['fechas_evaluaciones'].append(fecha)
+                        
+                        # Guardar el número de semana (tomamos el primero ya que todos son de la misma evaluación)
+                        num_semana = getattr(evals[0], 'num_semana', None)
+                        if num_semana is not None:
+                            resultados[empleado_id]['semanas_evaluaciones'].append(num_semana)
+                            resultados[empleado_id]['encargados'][encargado_id]['semanas_evaluaciones'].append(num_semana)
                         
                         # Sumar los porcentajes de todos los aspectos para esta evaluación
                         suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
@@ -1154,13 +1164,15 @@ def obtener_evaluaciones_todas_con_encargados():
                     'empleado_id': emp_id,
                     'calificacion_final': round(datos['porcentaje_final'], 2),
                     'total_evaluaciones': datos['total_evaluaciones_completas'],
-                    'fechas_evaluaciones': datos['fechas_evaluaciones'],  # Incluir fechas de evaluaciones
+                    'fechas_evaluaciones': datos['fechas_evaluaciones'],
+                    'semanas_evaluaciones': datos['semanas_evaluaciones'],  # Incluir semanas de evaluaciones
                     'encargados': [
                         {
                             'encargado_id': enc_id,
                             'nombre': enc_data['nombre'],
                             'evaluaciones_realizadas': enc_data['evaluaciones'],
-                            'fechas_evaluaciones': enc_data['fechas_evaluaciones']  # Incluir fechas por encargado
+                            'fechas_evaluaciones': enc_data['fechas_evaluaciones'],
+                            'semanas_evaluaciones': enc_data['semanas_evaluaciones']  # Incluir semanas por encargado
                         } for enc_id, enc_data in datos['encargados'].items()
                     ]
                 } for emp_id, datos in resultados.items() if datos['total_evaluaciones_completas'] > 0
