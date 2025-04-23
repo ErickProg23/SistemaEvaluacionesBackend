@@ -112,6 +112,7 @@ class Pregunta(db.Model):
         return {
             "id": self.id,
             "texto": self.texto,
+            "peso": float(self.peso),  # Convertir a float
             "descripcion": self.descripcion
         }
 
