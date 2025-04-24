@@ -1223,24 +1223,28 @@ def obtener_evaluaciones():
         return jsonify({'error': 'Se requiere ID de encargado'}), 400
 
     try:
-        #1. Determinar el mes mas reciente con evaluaciones
-        fecha_reciente = db.session.query(
-            db.func.max(
-                db.case(
-                    (Evaluacion.encargado_id == encargado_id, db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m')),
-                    else_=None
-                )
+        # 1. Obtener la fecha de la evaluación más reciente para cada empleado
+        subquery = db.session.query(
+            Evaluacion.empleado_id,
+            db.func.max(Evaluacion.fecha_evaluacion).label('fecha_reciente')
+        ).filter(
+            Evaluacion.encargado_id == encargado_id
+        ).group_by(
+            Evaluacion.empleado_id
+        ).subquery()
+
+        # 2. Obtener TODAS las evaluaciones más recientes para cada empleado
+        evaluaciones = db.session.query(Evaluacion).join(
+            subquery,
+            db.and_(
+                Evaluacion.empleado_id == subquery.c.empleado_id,
+                Evaluacion.fecha_evaluacion == subquery.c.fecha_reciente,
+                Evaluacion.encargado_id == encargado_id
             )
-        ).scalar()
-
-        if not fecha_reciente:
-            return jsonify({'error': 'No hay evaluaciones'}), 404
-
-        # 2. Obtener TODAS las evaluaciones del mes mas reciente (tanto ausente=0 como ausente=1)
-        evaluaciones = db.session.query(Evaluacion).filter(
-            Evaluacion.encargado_id == encargado_id,
-            db.func.date_format(Evaluacion.fecha_evaluacion, '%Y-%m') == fecha_reciente
         ).all()
+
+        if not evaluaciones:
+            return jsonify({'error': 'No hay evaluaciones'}), 404
 
         # Obtener IDs de empleados únicos
         empleado_ids = {eval.empleado_id for eval in evaluaciones}
@@ -1263,7 +1267,8 @@ def obtener_evaluaciones():
             'suma_porcentaje_total': 0.0,
             'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado',
-            'tiene_ausencia': False
+            'tiene_ausencia': False,
+            'fecha_evaluacion': None
         })
         
         # Inicializar datos para todos los empleados
@@ -1273,6 +1278,11 @@ def obtener_evaluaciones():
         # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
         for empleado_id, fechas in evaluaciones_agrupadas.items():
             for fecha, evals in fechas.items():
+                # Guardar la fecha de evaluación
+                fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
+                if resultados[empleado_id]['fecha_evaluacion'] is None or fecha_dt > resultados[empleado_id]['fecha_evaluacion']:
+                    resultados[empleado_id]['fecha_evaluacion'] = fecha_dt
+                
                 # Verificar si hay alguna evaluación con ausente=1 para este empleado y fecha
                 if any(eval.ausente == 1 for eval in evals):
                     resultados[empleado_id]['tiene_ausencia'] = True
@@ -1302,18 +1312,22 @@ def obtener_evaluaciones():
                     if datos['total_evaluaciones_completas'] > 0]
         promedio_general = sum(promedios) / len(promedios) if promedios else 0
 
-        # 8. Formatear respuesta
-        from dateutil.relativedelta import relativedelta
+        # 8. Determinar el rango de fechas para el período
+        fechas_evaluacion = [datos['fecha_evaluacion'] for datos in resultados.values() if datos['fecha_evaluacion'] is not None]
+        if fechas_evaluacion:
+            fecha_min = min(fechas_evaluacion)
+            fecha_max = max(fechas_evaluacion)
+        else:
+            # Si no hay fechas, usar la fecha actual
+            fecha_min = fecha_max = datetime.now()
 
-        fecha_inicio = datetime.strptime(fecha_reciente, '%Y-%m')
-        fecha_fin = fecha_inicio + relativedelta(months=1, days=-1)  # Último día del mes
-
+        # 9. Formatear respuesta
         return jsonify({
             'promedio_general': round(promedio_general, 2),
             'total_empleados': len(resultados),
             'periodo':{
-                'inicio': fecha_inicio,
-                'fin': fecha_fin
+                'inicio': fecha_min,
+                'fin': fecha_max
             },
             'detalle_empleados':[
                 {
@@ -1321,7 +1335,8 @@ def obtener_evaluaciones():
                     'empleado_id': emp_id,
                     'calificacion_final': round(datos['porcentaje_final'], 2) if 'porcentaje_final' in datos else 0,
                     'total_evaluaciones': datos['total_evaluaciones_completas'],
-                    'tiene_ausencia': datos['tiene_ausencia']
+                    'tiene_ausencia': datos['tiene_ausencia'],
+                    'fecha_evaluacion': datos['fecha_evaluacion'].strftime('%Y-%m-%d') if datos['fecha_evaluacion'] else None
                 } for emp_id, datos in resultados.items()
             ]
         }), 200
