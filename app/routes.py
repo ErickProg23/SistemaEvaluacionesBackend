@@ -1444,92 +1444,87 @@ def obtener_evaluaciones_filtradas():
         if not periodo_mapeado:
             return jsonify({'error': 'Periodo no válido. Use "month", "year" o "week".'}), 400
 
-       # Generar fecha_seleccionada según el periodo
-        try:
-            print("\n=== PROCESANDO FECHA ===")
-            print(f"Tipo de periodo: {periodo_mapeado}")
-            print(f"Valor recibido: {periodo_valor}")
-
-            if periodo_mapeado == 'mes':
-                 # Si el valor es solo el mes (ej: "05" o "4")
-                if periodo_valor.isdigit() and '-' not in periodo_valor:
-                    print(f"Caso: Solo mes ({periodo_valor})")
-                    year = current_year
-                    month = int(periodo_valor)
-                    fecha_seleccionada = date(year, month, 1)
-                else:
-                    # Si en algún caso envía "YYYY-MM"
-                    print("Caso: Año-mes (YYYY-MM)")
-                    try:
-                        year, month = map(int, periodo_valor.split('-'))
-                        fecha_seleccionada = date(year, month, 1)
-                    except ValueError:
-                        raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
-            elif periodo_mapeado == 'año':
-                # El valor es el año (ej: "2023")
-                print("Caso: Año completo")
-                year = int(periodo_valor)
-                fecha_seleccionada = date(year, 1, 1)  # 1 de enero
-            elif periodo_mapeado == 'semana':
-                try:
-                    if '-' not in periodo_valor:
-                        print("Caso: Solo número de semana")
-                        # Caso 1: Solo el número de semana (ej: "15")
-                        year = current_year  # Año actual
-                        week = int(periodo_valor)
-                        print(f"Semana inferida: {year}-W{week:02d}")
-                    else:
-                        # Caso 2: Formato YYYY-Www (ej: "2024-W15")
-                        # Verificar que el formato sea correcto
-                        if not periodo_valor.startswith('W') and 'W' in periodo_valor:
-                            parts = periodo_valor.split('-W')
-                            if len(parts) != 2:
-                                raise ValueError("Formato inválido para semana. Use YYYY-Www (ej: 2024-W15)")
-                            year = int(parts[0])
-                            week = int(parts[1])
-                        else:
-                            raise ValueError("Formato inválido para semana. Use YYYY-Www o solo el número de semana")
-                    
-                    # Validar rango de la semana
-                    if week < 1 or week > 53:
-                        raise ValueError("Semana debe estar entre 1 y 53")
-                    
-                    fecha_seleccionada = datetime.fromisocalendar(year, week, 1).date()
-                
-                except ValueError as e:
-                    return jsonify({'error': f'Error en semana: {str(e)}'}), 400
-        except ValueError as e:
-            print(f"\n[ERROR NO CONTROLADO] {str(e)}")
-            return jsonify({'error': f'Error: {str(e)}'}), 400
-
-        
-         # Validaciones adicionales
-        if periodo_mapeado == 'mes' and not (1 <= fecha_seleccionada.month <= 12):
-            return jsonify({'error': 'Mes inválido (debe ser 1-12)'}), 400
-
-        if periodo_mapeado == 'semana' and not (1 <= fecha_seleccionada.isocalendar()[0] <= 53):
-            return jsonify({'error': 'Semana inválida (1-53)'}), 400
-
-        if periodo_mapeado == 'año' and not (2000 <= fecha_seleccionada.year <= 2100):
-            return jsonify({'error': 'Año inválido (2000-2100)'}), 400
-
-        # Calcular rango de fechas
-        fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
-        
-        if not fecha_inicio or not fecha_fin:
-            return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
-        
-        
         # Construir la consulta base
-        query = Evaluacion.query.filter(
-            Evaluacion.ausente == False,
-            Evaluacion.fecha_evaluacion >= fecha_inicio,
-            Evaluacion.fecha_evaluacion <= fecha_fin
-        )
+        query = Evaluacion.query.filter(Evaluacion.ausente == False)
         
         # Filtrar por encargado si es necesario
         if encargado_id != 0:
             query = query.filter(Evaluacion.encargado_id == encargado_id)
+        
+        # Aplicar filtros según el tipo de periodo
+        if periodo_mapeado == 'semana':
+            # Para semanas, filtrar directamente por el campo num_semana
+            try:
+                num_semana = int(periodo_valor)
+                if num_semana < 1 or num_semana > 53:
+                    return jsonify({'error': 'Número de semana inválido (debe estar entre 1 y 53)'}), 400
+                
+                query = query.filter(Evaluacion.num_semana == num_semana)
+                
+                # Calcular fechas aproximadas para la respuesta (primer y último día de la semana)
+                fecha_inicio = datetime.fromisocalendar(current_year, num_semana, 1).date()
+                fecha_fin = datetime.fromisocalendar(current_year, num_semana, 7).date()
+                
+                periodo_formateado = f"Semana {num_semana} del {current_year}"
+                
+            except ValueError:
+                return jsonify({'error': 'Formato de semana inválido. Use un número entre 1 y 53.'}), 400
+        else:
+            # Para otros periodos, seguir con la lógica existente
+            try:
+                print("\n=== PROCESANDO FECHA ===")
+                print(f"Tipo de periodo: {periodo_mapeado}")
+                print(f"Valor recibido: {periodo_valor}")
+
+                if periodo_mapeado == 'mes':
+                    # Si el valor es solo el mes (ej: "05" o "4")
+                    if periodo_valor.isdigit() and '-' not in periodo_valor:
+                        print(f"Caso: Solo mes ({periodo_valor})")
+                        year = current_year
+                        month = int(periodo_valor)
+                        fecha_seleccionada = date(year, month, 1)
+                    else:
+                        # Si en algún caso envía "YYYY-MM"
+                        print("Caso: Año-mes (YYYY-MM)")
+                        try:
+                            year, month = map(int, periodo_valor.split('-'))
+                            fecha_seleccionada = date(year, month, 1)
+                        except ValueError:
+                            raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
+                elif periodo_mapeado == 'año':
+                    # El valor es el año (ej: "2023")
+                    print("Caso: Año completo")
+                    year = int(periodo_valor)
+                    fecha_seleccionada = date(year, 1, 1)  # 1 de enero
+                else:
+                    # No debería llegar aquí porque ya filtramos por semana
+                    return jsonify({'error': 'Tipo de periodo no soportado'}), 400
+
+                # Validaciones adicionales
+                if periodo_mapeado == 'mes' and not (1 <= fecha_seleccionada.month <= 12):
+                    return jsonify({'error': 'Mes inválido (debe ser 1-12)'}), 400
+
+                if periodo_mapeado == 'año' and not (2000 <= fecha_seleccionada.year <= 2100):
+                    return jsonify({'error': 'Año inválido (2000-2100)'}), 400
+
+                # Calcular rango de fechas
+                fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
+                
+                if not fecha_inicio or not fecha_fin:
+                    return jsonify({'error': 'Formato de fecha inválido para el periodo seleccionado'}), 400
+                
+                # Aplicar filtro de fechas a la consulta
+                query = query.filter(
+                    Evaluacion.fecha_evaluacion >= fecha_inicio,
+                    Evaluacion.fecha_evaluacion <= fecha_fin
+                )
+                
+                # Formatear el periodo para la respuesta
+                periodo_formateado = formatear_periodo(periodo, fecha_inicio)
+                
+            except ValueError as e:
+                print(f"\n[ERROR NO CONTROLADO] {str(e)}")
+                return jsonify({'error': f'Error: {str(e)}'}), 400
         
         # Ejecutar la consulta
         evaluaciones = query.all()
@@ -1594,9 +1589,6 @@ def obtener_evaluaciones_filtradas():
             promedio_general = sum(emp['calificacion_final'] for emp in detalle_empleados) / len(detalle_empleados)
         else:
             promedio_general = 0
-        
-        # Formatear el periodo para la respuesta
-        periodo_formateado = formatear_periodo(periodo, fecha_inicio)
         
         # Preparar respuesta
         response_data = {
