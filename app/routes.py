@@ -329,6 +329,7 @@ def obtener_empleados_por_encargado(encargado_id):
                 'nombre': empleado.nombre,
                 'puesto': empleado.puesto,
                 'num_empleado': empleado.num_empleado,
+                'tipo_evaluacion': empleado.tipo_evaluacion,
                 'activo': empleado.activo
             }
             for empleado in empleados
@@ -451,6 +452,84 @@ def obtener_preguntas():
     preguntas_json = [pregunta.to_dict() for pregunta in preguntas]
 
     return jsonify(preguntas_json), 200
+
+
+# Crear nueva pregunta
+@routes_blueprint.route('/newPregunta', methods=['OPTIONS', 'POST'])
+def crear_pregunta():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Verificar que la solicitud es JSON
+        if not request.is_json:
+            return jsonify({'error': 'Se esperaba un contenido JSON'}), 415
+        
+        # Obtener datos de la solicitud
+        data = request.json
+        
+        # Validar datos requeridos
+        if 'texto' not in data or 'tipo' not in data:
+            return jsonify({'error': 'Faltan campos requeridos (texto, tipo)'}), 400
+        
+        # Crear nueva pregunta
+        nueva_pregunta = Pregunta(
+            texto=data['texto'],
+            tipo=data['tipo'],
+            peso=data['peso'],
+            descripcion=data['descripcion'],
+            estado=data.get('estado', 1)  # Por defecto activo
+        )
+        
+        # Guardar en la base de datos
+        db.session.add(nueva_pregunta)
+        db.session.commit()
+        
+        # Devolver la pregunta creada con su ID
+        return jsonify(nueva_pregunta.to_dict()), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Editar pregunta existente
+@routes_blueprint.route('/preguntas/<int:id>', methods=['OPTIONS', 'PUT'])
+def editar_pregunta(id):
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Verificar que la solicitud es JSON
+        if not request.is_json:
+            return jsonify({'error': 'Se esperaba un contenido JSON'}), 415
+        
+        # Buscar la pregunta
+        pregunta = Pregunta.query.get(id)
+        if not pregunta:
+            return jsonify({'error': 'Pregunta no encontrada'}), 404
+        
+        # Obtener datos de la solicitud
+        data = request.json
+        
+        # Actualizar campos
+        if 'texto' in data:
+            pregunta.texto = data['texto']
+        
+        if 'categoria' in data:
+            pregunta.categoria = data['categoria']
+        
+        if 'estado' in data:
+            pregunta.estado = data['estado']
+        
+        # Guardar cambios
+        db.session.commit()
+        
+        # Devolver la pregunta actualizada
+        return jsonify(pregunta.to_dict()), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 # ACTUALIZAR DATOS --------------------------------------------------------------------------------------------
@@ -1066,119 +1145,175 @@ def obtener_evaluaciones_todas_con_encargados():
         return '', 200
         
     try: 
-        # Obtener todas las evaluaciones sin filtro de fecha, excluyendo ausentes
-        evaluaciones = Evaluacion.query.filter(Evaluacion.ausente == 0).all()
+        # Obtener parámetros de filtro
+        encargado_id = request.args.get('encargado_id', type=int)
+        periodo_tipo = request.args.get('periodo_tipo', 'month')
+        periodo_valor = request.args.get('periodo_valor')
+        
+        # Construir la consulta base
+        query = Evaluacion.query
+        
+        # Aplicar filtro de encargado si se proporciona
+        if encargado_id:
+            query = query.filter(Evaluacion.encargado_id == encargado_id)
+        
+        # Aplicar filtros según el tipo de periodo
+        if periodo_tipo and periodo_valor:
+            # Mapear periodo a español
+            periodo_mapeado = {
+                'month': 'mes',
+                'year': 'año',
+                'week': 'semana',
+                'mes': 'mes',  # Compatibilidad con español
+                'año': 'año',
+                'semana': 'semana'
+            }.get(periodo_tipo.lower(), None)
+            
+            if periodo_mapeado == 'semana':
+                # Para semanas, filtrar directamente por el campo num_semana
+                try:
+                    num_semana = int(periodo_valor)
+                    if num_semana < 1 or num_semana > 53:
+                        return jsonify({'error': 'Número de semana inválido (debe estar entre 1 y 53)'}), 400
+                    
+                    query = query.filter(Evaluacion.num_semana == num_semana)
+                except ValueError:
+                    return jsonify({'error': 'Formato de semana inválido. Use un número entre 1 y 53.'}), 400
+            
+            elif periodo_mapeado == 'mes':
+                # Si el valor es solo el mes (ej: "05" o "4")
+                current_year = datetime.now().year
+                try:
+                    if periodo_valor.isdigit() and '-' not in periodo_valor:
+                        month = int(periodo_valor)
+                        if month < 1 or month > 12:
+                            return jsonify({'error': 'Mes inválido (debe estar entre 1 y 12)'}), 400
+                        
+                        fecha_inicio = date(current_year, month, 1)
+                        if month == 12:
+                            fecha_fin = date(current_year + 1, 1, 1) - timedelta(days=1)
+                        else:
+                            fecha_fin = date(current_year, month + 1, 1) - timedelta(days=1)
+                    else:
+                        # Si en algún caso envía "YYYY-MM"
+                        year, month = map(int, periodo_valor.split('-'))
+                        fecha_inicio = date(year, month, 1)
+                        if month == 12:
+                            fecha_fin = date(year + 1, 1, 1) - timedelta(days=1)
+                        else:
+                            fecha_fin = date(year, month + 1, 1) - timedelta(days=1)
+                    
+                    query = query.filter(
+                        Evaluacion.fecha_evaluacion >= fecha_inicio,
+                        Evaluacion.fecha_evaluacion <= fecha_fin
+                    )
+                except ValueError:
+                    return jsonify({'error': 'Formato de mes inválido. Use MM o YYYY-MM'}), 400
+            
+            elif periodo_mapeado == 'año':
+                # El valor es el año (ej: "2023")
+                try:
+                    year = int(periodo_valor)
+                    if year < 2000 or year > 2100:
+                        return jsonify({'error': 'Año inválido (2000-2100)'}), 400
+                    
+                    fecha_inicio = date(year, 1, 1)
+                    fecha_fin = date(year, 12, 31)
+                    
+                    query = query.filter(
+                        Evaluacion.fecha_evaluacion >= fecha_inicio,
+                        Evaluacion.fecha_evaluacion <= fecha_fin
+                    )
+                except ValueError:
+                    return jsonify({'error': 'Formato de año inválido. Use YYYY'}), 400
+        
+        # Ejecutar la consulta
+        evaluaciones = query.all()
         
         if not evaluaciones:
-            return jsonify({'error': 'No hay evaluaciones'}), 404
+            return jsonify({'message': 'No hay evaluaciones para los filtros seleccionados'}), 404
 
         # Obtener IDs de empleados únicos
         empleado_ids = {eval.empleado_id for eval in evaluaciones}
-
-        # Obtener IDs de encargados únicos
-        encargado_ids = {eval.encargado_id for eval in evaluaciones}
-
+        
         # Consultar nombres de empleados
         empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
             Empleado.id.in_(empleado_ids)
         ).all()
         empleados_dict = {emp.id: emp.nombre for emp in empleados}
-
-        # Consultar nombres de encargados
-        encargados = db.session.query(Encargado.id, Encargado.nombre).filter(
-            Encargado.id.in_(encargado_ids)
-        ).all()
-        encargados_dict = {enc.id: enc.nombre for enc in encargados}
-
-        # Agrupar evaluaciones por empleado, encargado y fecha
-        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        
+        # Agrupar evaluaciones por empleado y fecha
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
             fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
             empleado_id = eval.empleado_id
-            encargado_id = eval.encargado_id
-            evaluaciones_agrupadas[empleado_id][encargado_id][fecha_str].append(eval)
+            evaluaciones_agrupadas[empleado_id][fecha_str].append(eval)
         
         # Procesar datos por empleado
-        resultados = defaultdict(lambda: {
+        resultados_empleados = defaultdict(lambda: {
             'suma_porcentaje_total': 0.0,
             'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado',
-            'encargados': {},  # Diccionario para almacenar encargados y sus evaluaciones
-            'fechas_evaluaciones': [],  # Lista para almacenar las fechas de evaluaciones completas
-            'semanas_evaluaciones': []  # Lista para almacenar las semanas de evaluaciones completas
+            'tiene_ausencia': False
         })
         
+        # Inicializar datos para todos los empleados
+        for empleado_id in empleado_ids:
+            resultados_empleados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+        
         # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
-        for empleado_id, encargados in evaluaciones_agrupadas.items():
-            for encargado_id, fechas in encargados.items():
-                # Inicializar contador para este encargado si no existe
-                if encargado_id not in resultados[empleado_id]['encargados']:
-                    resultados[empleado_id]['encargados'][encargado_id] = {
-                        'nombre': encargados_dict.get(encargado_id, 'Nombre no encontrado'),
-                        'evaluaciones': 0,
-                        'fechas_evaluaciones': [],  # Lista para almacenar fechas por encargado
-                        'semanas_evaluaciones': []  # Lista para almacenar semanas por encargado
-                    }
+        for empleado_id, fechas in evaluaciones_agrupadas.items():
+            for fecha, evals in fechas.items():
+                # Verificar si hay alguna evaluación con ausente=1 para este empleado y fecha
+                if any(eval.ausente == 1 for eval in evals):
+                    resultados_empleados[empleado_id]['tiene_ausencia'] = True
                 
-                for fecha, evals in fechas.items():
-                    # Si hay 9 aspectos, consideramos que es una evaluación completa
-                    if len(evals) == 9:
-                        resultados[empleado_id]['total_evaluaciones_completas'] += 1
-                        resultados[empleado_id]['encargados'][encargado_id]['evaluaciones'] += 1
-                        
-                        # Guardar la fecha de la evaluación completa
-                        resultados[empleado_id]['fechas_evaluaciones'].append(fecha)
-                        resultados[empleado_id]['encargados'][encargado_id]['fechas_evaluaciones'].append(fecha)
-                        
-                        # Guardar el número de semana (tomamos el primero ya que todos son de la misma evaluación)
-                        num_semana = getattr(evals[0], 'num_semana', None)
-                        if num_semana is not None:
-                            resultados[empleado_id]['semanas_evaluaciones'].append(num_semana)
-                            resultados[empleado_id]['encargados'][encargado_id]['semanas_evaluaciones'].append(num_semana)
-                        
-                        # Sumar los porcentajes de todos los aspectos para esta evaluación
-                        suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals)
-                        resultados[empleado_id]['suma_porcentaje_total'] += suma_porcentaje
-                        resultados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
-
-        # Calcular porcentaje_final correctamente
-        for empleado_id, datos in resultados.items():
+                # Considerar todas las evaluaciones, incluyendo ausentes
+                evals_presentes = [eval for eval in evals if eval.ausente == 0]
+                
+                # Si hay 9 aspectos con ausente=0, consideramos que es una evaluación completa
+                if len(evals_presentes) == 9:
+                    resultados_empleados[empleado_id]['total_evaluaciones_completas'] += 1
+                    # Sumar los porcentajes de todos los aspectos para esta evaluación
+                    suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals_presentes)
+                    resultados_empleados[empleado_id]['suma_porcentaje_total'] += suma_porcentaje
+        
+        # Calcular calificación final por empleado
+        detalle_empleados = []
+        for empleado_id, datos in resultados_empleados.items():
             if datos['total_evaluaciones_completas'] > 0:
-                # Calcular el promedio de porcentaje final
-                datos['porcentaje_final'] = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
-                datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)  # Limitar a 100%
+                # Calcular el promedio de porcentaje final (suma de porcentajes / (500 * número de evaluaciones))
+                porcentaje_final = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
+                porcentaje_final = min(porcentaje_final, 100.0)  # Limitar a 100%
             else:
-                datos['porcentaje_final'] = 0.0
-
-        # Calcular promedios solo de empleados con evaluaciones completas
-        promedios = [datos['porcentaje_final'] for datos in resultados.values() if datos['total_evaluaciones_completas'] > 0]
-        promedio_general = sum(promedios) / len(promedios) if promedios else 0
-
-        # Formatear respuesta
-        return jsonify({
+                porcentaje_final = 0.0
+            
+            detalle_empleados.append({
+                'empleado_id': empleado_id,
+                'nombre': datos['nombre'],
+                'calificacion_final': round(porcentaje_final, 2),
+                'total_evaluaciones': datos['total_evaluaciones_completas'],
+                'tiene_ausencia': datos['tiene_ausencia']
+            })
+        
+        # Ordenar por calificación final de mayor a menor
+        detalle_empleados.sort(key=lambda x: x['calificacion_final'], reverse=True)
+        
+        # Calcular promedio general de todos los empleados
+        if detalle_empleados:
+            promedio_general = sum(emp['calificacion_final'] for emp in detalle_empleados) / len(detalle_empleados)
+        else:
+            promedio_general = 0
+        
+        # Preparar respuesta
+        response_data = {
+            'total_empleados': len(detalle_empleados),
             'promedio_general': round(promedio_general, 2),
-            'total_empleados': len(promedios),
-            'detalle_empleados':[
-                {
-                    'nombre': datos['nombre'],
-                    'empleado_id': emp_id,
-                    'calificacion_final': round(datos['porcentaje_final'], 2),
-                    'total_evaluaciones': datos['total_evaluaciones_completas'],
-                    'fechas_evaluaciones': datos['fechas_evaluaciones'],
-                    'semanas_evaluaciones': datos['semanas_evaluaciones'],  # Incluir semanas de evaluaciones
-                    'encargados': [
-                        {
-                            'encargado_id': enc_id,
-                            'nombre': enc_data['nombre'],
-                            'evaluaciones_realizadas': enc_data['evaluaciones'],
-                            'fechas_evaluaciones': enc_data['fechas_evaluaciones'],
-                            'semanas_evaluaciones': enc_data['semanas_evaluaciones']  # Incluir semanas por encargado
-                        } for enc_id, enc_data in datos['encargados'].items()
-                    ]
-                } for emp_id, datos in resultados.items() if datos['total_evaluaciones_completas'] > 0
-            ]
-        }), 200
-
+            'detalle_empleados': detalle_empleados
+        }
+        
+        return jsonify(response_data), 200
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

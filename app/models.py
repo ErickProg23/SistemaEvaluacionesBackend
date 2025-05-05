@@ -51,6 +51,7 @@ class Empleado(db.Model):
     num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
 
      # Relación con el modelo Encargado
     # Update this relationship
@@ -64,7 +65,7 @@ class Empleado(db.Model):
     rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluadores {self.encargados}, Rol {self.rol_id}>"
+        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluadores {self.encargados}, Rol {self.rol_id}, Tipo_Evaluacion {self.tipo_evaluacion}>"
     
 
 class Encargado(db.Model):
@@ -101,23 +102,27 @@ class EncargadoUsuario(db.Model):
         return f"<Encargado {self.encargado_id}, Usuario {self.usuario_id}>"
 
 class Pregunta(db.Model):
-    __tablename__ = 'pregunta'
+    __tablename__ = 'aspecto'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     texto = db.Column(db.String(500), nullable=False)
     peso = db.Column(db.Numeric(5, 2), nullable=False)  # Manejo de decimales
     descripcion = db.Column(db.String(65535))
+    tipo = db.Column(db.Integer, nullable=False)
+    estado = db.Column(db.Integer, nullable=False)
 
     def to_dict(self):
         return {
             "id": self.id,
             "texto": self.texto,
             "peso": float(self.peso),  # Convertir a float
-            "descripcion": self.descripcion
+            "descripcion": self.descripcion,
+            "tipo": self.tipo,
+            "estado": self.estado
         }
 
     def __repr__(self):
-        return f"<Texto {self.texto}, Peso {self.peso}, Descripcion {self.descripcion}>"
+        return f"<Texto {self.texto}, Peso {self.peso}, Descripcion {self.descripcion}, Tipo {self.tipo}, Estado {self.estado}>"
 
 
 class Respuesta(db.Model):
