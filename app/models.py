@@ -79,6 +79,7 @@ class Encargado(db.Model):
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
 
     encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
     empleados = db.relationship(
@@ -90,7 +91,7 @@ class Encargado(db.Model):
     )
 
     def __repr__(self):
-        return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}>"
+        return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}, Tipo evaluacion {self.tipo_evaluacion}>"
     
 class EncargadoUsuario(db.Model):
     __tablename__='encargado_usuario'

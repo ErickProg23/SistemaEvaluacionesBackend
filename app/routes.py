@@ -440,6 +440,34 @@ def obtener_encargado(id):
     else:
         return jsonify({'message': 'No se pudo extraer la información'}), 404
 
+@routes_blueprint.route('/usuarios/verificar/<int:num_empleado>', methods=['OPTIONS', 'GET'])
+def verificar_numero_empleado(num_empleado):
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Buscar en la tabla de empleados
+        empleado = Empleado.query.filter_by(num_empleado=num_empleado).first()
+        
+        # Buscar en la tabla de encargados
+        encargado = Encargado.query.filter_by(num_empleado=num_empleado).first()
+        
+        if empleado or encargado:
+            # Si existe un empleado o encargado con ese número
+            return jsonify({
+                'existe': True,
+                'mensaje': 'Ya existe un usuario con este número de empleado'
+            }), 200
+        else:
+            # Si no existe
+            return jsonify({
+                'existe': False,
+                'mensaje': 'Número de empleado disponible'
+            }), 200
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @routes_blueprint.route('/preguntas', methods=['GET'])
 def obtener_preguntas():
     # Obtiene todas las preguntas
@@ -515,11 +543,19 @@ def editar_pregunta(id):
         if 'texto' in data:
             pregunta.texto = data['texto']
         
-        if 'categoria' in data:
-            pregunta.categoria = data['categoria']
+        if 'tipo' in data:
+            pregunta.tipo = data['tipo']
         
         if 'estado' in data:
             pregunta.estado = data['estado']
+
+        if 'peso' in data:
+            pregunta.peso = data['peso']
+
+        if 'descripcion' in data:
+            pregunta.descripcion = data['descripcion']
+
+        
         
         # Guardar cambios
         db.session.commit()
@@ -686,21 +722,37 @@ def new_employee():
     if not data:
         return jsonify({'error': 'No se recibio datos'}), 400
 
-    nombre = data.get('nombre')
+    nombre = data.get('nombre').strip().lower()  # Convertir a minúsculas y quitar espacios
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     encargados_ids = data.get('encargados_ids', [])
-    rol_id = data.get('rol_id', 3)
+    
+    # Determinar tipo_evaluacion basado en encargados_ids
+    if len(encargados_ids) >= 2:
+        # Si hay 2 o más encargados, asignar tipo_evaluacion = 3
+        tipo_evaluacion = 3
+    elif len(encargados_ids) == 1:
+        # Si hay solo 1 encargado, buscar su tipo_evaluacion
+        encargado = Encargado.query.get(encargados_ids[0])
+        if encargado:
+            tipo_evaluacion = encargado.tipo_evaluacion
 
     if not nombre or not puesto or not num_empleado:
         return jsonify({'error': 'Faltan datos'}), 400
 
     try:
+        # Paso 1: Buscar el usuario por nombre
+        usuario = Usuario.query.filter(Usuario.nombre.collate('utf8mb4_general_ci') == nombre).first()
+        if not usuario:
+            return jsonify({'error': f'No existe un usuario con el nombre "{nombre}"'}), 404
+
         nuevo_empleado = Empleado(
             nombre=nombre,
             puesto=puesto,
             num_empleado=num_empleado,
-            rol_id=rol_id
+            rol_id=3,  # ID para empleado
+            tipo_evaluacion=tipo_evaluacion,
+            activo=True
         )
         db.session.add(nuevo_empleado)
         db.session.flush()
@@ -708,8 +760,9 @@ def new_employee():
         # Relacionar los encargados seleccionados con el empleado
         if encargados_ids:
             encargados = Encargado.query.filter(Encargado.id.in_(encargados_ids)).all()
-            if not encargados:
+            if len(encargados) != len(encargados_ids):
                 return jsonify({'error': 'Uno o más encargados no encontrados'}), 404
+
             nuevo_empleado.encargados.extend(encargados)  # Asignar la relación muchos a muchos
 
         db.session.commit()
@@ -720,14 +773,16 @@ def new_employee():
                 'id': nuevo_empleado.id,
                 'nombre': nuevo_empleado.nombre,
                 'puesto': nuevo_empleado.puesto,
+                'encargados': [{'id': e.id, 'nombre': e.nombre} for e in nuevo_empleado.encargados],  # Mostrar los encargados
                 'num_empleado': nuevo_empleado.num_empleado,
-                'encargados': [encargado.nombre for encargado in nuevo_empleado.encargados],
+                'tipo_evaluacion': nuevo_empleado.tipo_evaluacion,
                 'rol': nuevo_empleado.rol_id
             }
         }), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error':'Error al crear el empleado', 'mensaje': str(e)}), 500
+        return jsonify({'error': 'Error al crear el empleado', 'mensaje': str(e)}), 500
 
 
 @routes_blueprint.route('/encargados/nuevo', methods=['OPTIONS', 'POST'])
@@ -739,25 +794,32 @@ def nuevo_encargado():
     if not data:
         return jsonify({'error': 'No se recibio datos'}), 400
 
-    nombre = data.get('nombre').strip().lower()  # Convertir a minúsculas y quitar espacios
+    # Guardar el nombre original
+    nombre_original = data.get('nombre')
+    
+    # Usar una versión modificada del nombre para la búsqueda
+    nombre_busqueda = nombre_original.strip().lower() if nombre_original else ""
+    
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     encargados_ids = data.get('encargados_ids', [])
+    tipo_evaluacion = data.get('tipo_evaluacion')
     rol_id = data.get('rol_id',2)
-
-    if not nombre or not puesto or not num_empleado:
+    
+    if not nombre_original or not puesto or not num_empleado:
         return jsonify({'error': 'Faltan datos'}), 400
 
     try:
-        # Paso 1: Buscar el usuario por nombre
-        usuario = Usuario.query.filter(Usuario.nombre.collate('utf8mb4_general_ci') == nombre).first()
+        # Paso 1: Buscar el usuario por nombre (usando la versión modificada para búsqueda)
+        usuario = Usuario.query.filter(Usuario.nombre.collate('utf8mb4_general_ci') == nombre_busqueda).first()
         if not usuario:
-            return jsonify({'error': f'No existe un usuario con el nombre "{nombre}"'}), 404
+            return jsonify({'error': f'No existe un usuario con el nombre "{nombre_original}"'}), 404
 
         nuevo_encargado = Encargado(
-            nombre=nombre,
+            nombre=nombre_original,  # Usar el nombre original para guardar
             puesto=puesto,
             num_empleado=num_empleado,
+            tipo_evaluacion=tipo_evaluacion,
             rol_id=rol_id,
             usuario_id=usuario.id
         )
