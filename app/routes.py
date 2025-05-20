@@ -202,8 +202,9 @@ def login():
         # Busca si el usuario tiene un registro en la tabla encargado
         encargado = Encargado.query.filter_by(usuario_id=usuario.id).first()
 
-        # Si el encargado existe, obtenemos su ID, sino usamos null o un identificador especial
+        # Si el encargado existe, obtenemos su ID y tipo_evaluacion, sino usamos null o un identificador especial
         id_encargado = encargado.id if encargado else None
+        tipo_evaluacion = encargado.tipo_evaluacion if encargado else None
         
         # Guardar el ID del usuario en una variable separada
         usuario_id = usuario.id
@@ -214,7 +215,8 @@ def login():
         , {'rol_id': rol_id}
         , {'nombre': nombre},
         {'id_encargado': id_encargado},
-        {'usuario_id': usuario_id}), 200
+        {'usuario_id': usuario_id},
+        {'tipo_evaluacion': tipo_evaluacion}), 200
 
     return jsonify({'message': 'Correo o contraseña incorrectos'}), 401
 
@@ -281,6 +283,7 @@ def get_empleados():
                 'nombre': empleado.nombre,
                 'puesto': empleado.puesto,
                 'num_empleado': empleado.num_empleado,
+                'tipo_evaluacion': empleado.tipo_evaluacion,
                 'activo': empleado.activo,
                 'encargados': encargados_nombres
             })
@@ -403,6 +406,7 @@ def obtener_empleado(id):
             'nombre': empleado.nombre,
             'puesto': empleado.puesto,
             'num_empleado': empleado.num_empleado,
+            'tipo_evaluacion': empleado.tipo_evaluacion,
             'activo': empleado.activo,
             'encargados': empleados_encargados  # Ahora es una lista de encargados
         }
@@ -468,17 +472,39 @@ def verificar_numero_empleado(num_empleado):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@routes_blueprint.route('/preguntas', methods=['GET'])
+@routes_blueprint.route('/preguntas/evaluacion', methods=['GET'])
 def obtener_preguntas():
-    # Obtiene todas las preguntas
+     # Obtener el tipo desde los parámetros de la URL
+    tipo = request.args.get('tipo')
+
+    if not tipo:
+        return jsonify({"mensaje": "El parámetro 'tipo' es requerido"}), 400
+
+    try:
+        tipo = int(tipo)
+    except ValueError:
+        return jsonify({"mensaje": "El tipo debe ser un número entero"}), 400
+
+    # Buscar preguntas del tipo solicitado O tipo 3
+    preguntas = Pregunta.query.filter(
+        (Pregunta.tipo == tipo) | (Pregunta.tipo == 3)
+    ).all()
+
+    if not preguntas:
+        return jsonify({"mensaje": "No hay preguntas disponibles"}), 404
+
+    preguntas_json = [pregunta.to_dict() for pregunta in preguntas]
+    return jsonify(preguntas_json), 200
+
+@routes_blueprint.route('/preguntas', methods=['GET'])
+def obtener_Todaspreguntas():
+    # Obtener todas las preguntas sin filtrar por tipo
     preguntas = Pregunta.query.all()
 
     if not preguntas:
         return jsonify({"mensaje": "No hay preguntas disponibles"}), 404
 
-    # Convertir los objetos en formato JSON
     preguntas_json = [pregunta.to_dict() for pregunta in preguntas]
-
     return jsonify(preguntas_json), 200
 
 
@@ -632,6 +658,9 @@ def editar_empleado(id):
     empleado.nombre = data['nombre']
     empleado.puesto = data['puesto']
     empleado.num_empleado = data['num_empleado']
+    empleado.tipo_evaluacion = data['tipo_evaluacion']
+
+    db.session.commit()
 
     # Si 'encargados_ids' está en la solicitud
     if 'encargados_ids' in data:
@@ -726,9 +755,11 @@ def new_employee():
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     encargados_ids = data.get('encargados_ids', [])
-    
+
+    if not encargados_ids:
+        tipo_evaluacion = 0
     # Determinar tipo_evaluacion basado en encargados_ids
-    if len(encargados_ids) >= 2:
+    elif len(encargados_ids) >= 2:
         # Si hay 2 o más encargados, asignar tipo_evaluacion = 3
         tipo_evaluacion = 3
     elif len(encargados_ids) == 1:
@@ -736,15 +767,13 @@ def new_employee():
         encargado = Encargado.query.get(encargados_ids[0])
         if encargado:
             tipo_evaluacion = encargado.tipo_evaluacion
+        else:
+            tipo_evaluacion = 1
 
     if not nombre or not puesto or not num_empleado:
         return jsonify({'error': 'Faltan datos'}), 400
 
     try:
-        # Paso 1: Buscar el usuario por nombre
-        usuario = Usuario.query.filter(Usuario.nombre.collate('utf8mb4_general_ci') == nombre).first()
-        if not usuario:
-            return jsonify({'error': f'No existe un usuario con el nombre "{nombre}"'}), 404
 
         nuevo_empleado = Empleado(
             nombre=nombre,
@@ -914,62 +943,56 @@ def guardar_evaluacion():
         return jsonify({'message': 'OK'}), 200
 
     try:
-        # Obtener los datos del payload y el id_encargado desde el cuerpo de la solicitud
         data = request.json
         payload = data.get('payload')
         id_encargado = data.get('idEncargado')
         num_semana = data.get('num_semana')
+        tipo_evaluacion = data.get('tipo_evaluacion')
 
-        # Validar que los datos necesarios estén presentes
         if not payload or not id_encargado:
             return jsonify({'error': 'Datos incompletos'}), 400
 
-        # Procesar cada evaluación en el payload
         for evaluacion_data in payload:
             empleado_id = evaluacion_data.get('empleado_id')
             calificaciones = evaluacion_data.get('calificaciones')
             comentarios = evaluacion_data.get('comentarios')
-            ausente = evaluacion_data.get('ausente', False)  # Valor por defecto: False
+            ausente = evaluacion_data.get('ausente', False)
 
-            # Convertir comentarios a cadena si es una lista
             if isinstance(comentarios, list):
-                comentarios = ', '.join(comentarios)  # Une los elementos de la lista en una cadena
+                comentarios = ', '.join(comentarios)
 
-            # Convertir el valor de 'ausente' a 1 (true) o 0 (false)
             ausente_db = 1 if ausente else 0
 
-            # Obtener los aspectos (preguntas) desde la base de datos
-            aspectos_db = Pregunta.query.all()
+            for aspecto_texto, calificacion in calificaciones.items():
+                # Buscar el aspecto en la base de datos por nombre
+                aspecto_db = Pregunta.query.filter_by(texto=aspecto_texto).first()
 
-            # Procesar cada aspecto (pregunta)
-            for aspecto_db in aspectos_db:
-                calificacion = calificaciones.get(aspecto_db.texto, 0)  # Obtener la calificación del aspecto
-                porcentaje = calificacion * aspecto_db.peso  # Calcular el porcentaje ponderado
+                if aspecto_db:
+                    peso = aspecto_db.peso
 
-                # Crear una nueva evaluación para cada aspecto
+                porcentaje = calificacion * peso
+
                 nueva_evaluacion = Evaluacion(
                     empleado_id=empleado_id,
                     encargado_id=id_encargado,
                     fecha_evaluacion=datetime.now(),
-                    aspecto=aspecto_db.texto,  # Nombre del aspecto
-                    total_puntos=calificacion,  # Calificación del aspecto
-                    porcentaje_total=porcentaje,  # Porcentaje ponderado
-                    comentarios=comentarios,  # Comentarios generales
-                    ausente=ausente_db,  # Guardar 1 si está ausente, 0 si no
-                    num_semana=num_semana  # Guardar el número de semana
+                    aspecto=aspecto_texto,
+                    total_puntos=calificacion,
+                    porcentaje_total=porcentaje,
+                    comentarios=comentarios,
+                    ausente=ausente_db,
+                    num_semana=num_semana,
+                    tipo_evaluacion=tipo_evaluacion
                 )
-
-                # Guardar en la base de datos
                 db.session.add(nueva_evaluacion)
 
-        # Confirmar los cambios en la base de datos
         db.session.commit()
-
         return jsonify({'message': 'Evaluaciones guardadas correctamente'}), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
 
 #----------------------------NOTIFICACIONES------------------------------------------------------
 @routes_blueprint.route('/notificaciones/nueva', methods=['OPTIONS', 'POST'])
