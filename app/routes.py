@@ -1406,17 +1406,18 @@ def obtener_evaluaciones_todas_con_encargados():
 @routes_blueprint.route('/evaluaciones/aspectos', methods=['OPTIONS', 'GET'])
 def obtener_promedio_aspectos():
     try:
-        # Query con conversión a porcentaje
+        # Consulta con tipo incluido
         query = db.text("""
             SELECT 
-                p.texto as aspecto,
-                COALESCE(ROUND((AVG(e.total_puntos) / 5) * 100, 2), 0.00) as porcentaje  -- Escala 0-5 → 0-100%
+                p.texto AS aspecto,
+                p.tipo AS tipo,
+                COALESCE(ROUND((AVG(e.total_puntos) / 5) * 100, 2), 0.00) AS porcentaje
             FROM 
-                pregunta p
+                aspecto p
             LEFT JOIN 
                 evaluacion e ON p.texto = e.aspecto AND e.ausente = FALSE
             GROUP BY 
-                p.id, p.texto
+                p.id, p.texto, p.tipo
             ORDER BY 
                 p.id;
         """)
@@ -1425,7 +1426,8 @@ def obtener_promedio_aspectos():
         data = [
             {
                 "aspecto": row.aspecto,
-                "porcentaje": float(row.porcentaje)  # Ej: 86.6
+                "tipo": row.tipo,
+                "porcentaje": float(row.porcentaje)
             }
             for row in result
         ]
@@ -1434,6 +1436,7 @@ def obtener_promedio_aspectos():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @routes_blueprint.route('/evaluaciones', methods=['OPTIONS','GET'])
 def obtener_evaluaciones():
