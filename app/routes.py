@@ -1324,6 +1324,18 @@ def obtener_evaluaciones_todas_con_encargados():
         
         # Ejecutar la consulta
         evaluaciones = query.all()
+
+        # Obtener IDs únicos de encargados desde las evaluaciones
+        encargado_ids = {eval.encargado_id for eval in evaluaciones}
+
+        # Consultar información de encargados
+        encargados = db.session.query(Encargado).filter(
+            Encargado.id.in_(encargado_ids)
+        ).all()
+
+        # Crear diccionario con información de encargados
+        encargados_dict = {enc.id: enc.nombre for enc in encargados}
+
         
         if not evaluaciones:
             return jsonify({'message': 'No hay evaluaciones para los filtros seleccionados'}), 404
@@ -1331,11 +1343,18 @@ def obtener_evaluaciones_todas_con_encargados():
         # Obtener IDs de empleados únicos
         empleado_ids = {eval.empleado_id for eval in evaluaciones}
         
-        # Consultar nombres de empleados
-        empleados = db.session.query(Empleado.id, Empleado.nombre).filter(
+        # Consultar información de empleados (incluyendo tipo_evaluacion)
+        empleados = db.session.query(Empleado).filter(
             Empleado.id.in_(empleado_ids)
         ).all()
-        empleados_dict = {emp.id: emp.nombre for emp in empleados}
+        
+        # Crear diccionario con información de empleados
+        empleados_dict = {}
+        for emp in empleados:
+            empleados_dict[emp.id] = {
+                'nombre': emp.nombre,
+                'tipo_evaluacion': emp.tipo_evaluacion
+            }
         
         # Agrupar evaluaciones por empleado y fecha
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
@@ -1349,25 +1368,39 @@ def obtener_evaluaciones_todas_con_encargados():
             'suma_porcentaje_total': 0.0,
             'total_evaluaciones_completas': 0,
             'nombre': 'Nombre no encontrado',
-            'tiene_ausencia': False
+            'tiene_ausencia': False,
+            'tipo_evaluacion': 0  # Valor por defecto
         })
         
         # Inicializar datos para todos los empleados
         for empleado_id in empleado_ids:
-            resultados_empleados[empleado_id]['nombre'] = empleados_dict.get(empleado_id, 'Nombre no encontrado')
+            if empleado_id in empleados_dict:
+                resultados_empleados[empleado_id]['nombre'] = empleados_dict[empleado_id]['nombre']
+                resultados_empleados[empleado_id]['tipo_evaluacion'] = empleados_dict[empleado_id]['tipo_evaluacion']
+            else:
+                resultados_empleados[empleado_id]['nombre'] = 'Nombre no encontrado'
         
-        # Contar evaluaciones completas (con 9 aspectos) y sumar porcentajes
+        # Contar evaluaciones completas y sumar porcentajes según el tipo de evaluación
         for empleado_id, fechas in evaluaciones_agrupadas.items():
+            # Obtener el tipo de evaluación del empleado
+            tipo_evaluacion = resultados_empleados[empleado_id]['tipo_evaluacion']
+            
             for fecha, evals in fechas.items():
                 # Verificar si hay alguna evaluación con ausente=1 para este empleado y fecha
                 if any(eval.ausente == 1 for eval in evals):
                     resultados_empleados[empleado_id]['tiene_ausencia'] = True
                 
-                # Considerar todas las evaluaciones, incluyendo ausentes
+                # Considerar solo las evaluaciones donde el empleado estuvo presente
                 evals_presentes = [eval for eval in evals if eval.ausente == 0]
                 
-                # Si hay 9 aspectos con ausente=0, consideramos que es una evaluación completa
-                if len(evals_presentes) == 9:
+                # Determinar si la evaluación está completa según el tipo de empleado
+                es_completa = False
+                aspectos_requeridos = 9 if tipo_evaluacion == 1 else 8
+                
+                if len(evals_presentes) == aspectos_requeridos:
+                    es_completa = True
+                
+                if es_completa:
                     resultados_empleados[empleado_id]['total_evaluaciones_completas'] += 1
                     # Sumar los porcentajes de todos los aspectos para esta evaluación
                     suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals_presentes)
@@ -1377,18 +1410,35 @@ def obtener_evaluaciones_todas_con_encargados():
         detalle_empleados = []
         for empleado_id, datos in resultados_empleados.items():
             if datos['total_evaluaciones_completas'] > 0:
-                # Calcular el promedio de porcentaje final (suma de porcentajes / (500 * número de evaluaciones))
-                porcentaje_final = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
+                # Calcular el promedio según el tipo de evaluación
+                tipo_evaluacion = datos['tipo_evaluacion']
+                divisor = 500  # Valor por defecto para tipo 1 (9 aspectos)
+                
+                if tipo_evaluacion == 2:
+                    divisor = 500  # Para tipo 2 (8 aspectos)
+                
+                # Calcular el promedio de porcentaje final
+                porcentaje_final = (datos['suma_porcentaje_total'] / (divisor * datos['total_evaluaciones_completas'])) * 100
                 porcentaje_final = min(porcentaje_final, 100.0)  # Limitar a 100%
             else:
                 porcentaje_final = 0.0
             
+            # Obtener el encargado de las evaluaciones del empleado
+            evaluaciones_empleado = [eval for eval in evaluaciones if eval.empleado_id == empleado_id]
+            encargado_id = evaluaciones_empleado[0].encargado_id if evaluaciones_empleado else None
+            nombre_encargado = encargados_dict.get(encargado_id, 'No disponible') if encargado_id else 'No disponible'
+
             detalle_empleados.append({
                 'empleado_id': empleado_id,
                 'nombre': datos['nombre'],
+                'tipo_evaluacion': datos['tipo_evaluacion'],
                 'calificacion_final': round(porcentaje_final, 2),
                 'total_evaluaciones': datos['total_evaluaciones_completas'],
-                'tiene_ausencia': datos['tiene_ausencia']
+                'tiene_ausencia': datos['tiene_ausencia'],
+                'encargado': {
+                    'id': encargado_id,
+                    'nombre': nombre_encargado
+                }
             })
         
         # Ordenar por calificación final de mayor a menor
@@ -2399,6 +2449,9 @@ def obtener_evaluaciones_empleado(empleado_id):
         if not empleado:
             return jsonify({'error': 'Empleado no encontrado'}), 404
         
+        # Obtener el tipo de evaluación del empleado
+        tipo_evaluacion = empleado.tipo_evaluacion
+        
         # Mapear periodo a español
         periodo_mapeado = {
             'month': 'mes',
@@ -2483,6 +2536,7 @@ def obtener_evaluaciones_empleado(empleado_id):
             return jsonify({
                 'empleado_id': empleado_id,
                 'empleado_nombre': empleado.nombre,
+                'tipo_evaluacion': tipo_evaluacion,
                 'periodo': formatear_periodo(periodo_mapeado, fecha_seleccionada),
                 'rango_fechas': {
                     'inicio': fecha_inicio.strftime('%Y-%m-%d'),
@@ -2492,7 +2546,10 @@ def obtener_evaluaciones_empleado(empleado_id):
                 'evaluaciones': []
             }), 200
         
-        # El resto de la función permanece igual
+        # Determinar el número de aspectos según el tipo de evaluación
+        num_aspectos_esperados = 9 if tipo_evaluacion == 1 else 8
+        divisor_calificacion = 500 if tipo_evaluacion == 1 else 500
+        
         # Agrupar evaluaciones por fecha y encargado
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
@@ -2545,8 +2602,8 @@ def obtener_evaluaciones_empleado(empleado_id):
                         })
                         suma_porcentaje += float(eval.porcentaje_total)
                     
-                    # Calcular calificación total (sobre 100%)
-                    calificacion_total = (suma_porcentaje / 500) * 100 if len(evals) == 9 else 0
+                    # Calcular calificación total según el tipo de evaluación
+                    calificacion_total = (suma_porcentaje / divisor_calificacion) * 100 if len(evals) == num_aspectos_esperados else 0
                     
                     resultados.append({
                         'fecha': fecha,
@@ -2564,6 +2621,7 @@ def obtener_evaluaciones_empleado(empleado_id):
         return jsonify({
             'empleado_id': empleado_id,
             'empleado_nombre': empleado.nombre,
+            'tipo_evaluacion': tipo_evaluacion,
             'periodo': periodo_formateado,
             'rango_fechas': {
                 'inicio': fecha_inicio.strftime('%Y-%m-%d'),
