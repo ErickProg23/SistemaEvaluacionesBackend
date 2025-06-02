@@ -172,3 +172,16 @@ class Notificacion(db.Model):
 
     def __repr__(self):
         return f'<Notificacion ID: {self.id}, Encargado ID: {self.id}, Empleado ID: {self.id}, Accion: {self.accion}, Fecha: {self.fecha}, Activo: {self.activo}>'
+
+class Formato(db.Model):
+    __tablename__ = 'formatos'
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(255), nullable=False)
+    descripcion = db.Column(db.Text)
+    archivo_url = db.Column(db.String(500), nullable=False)
+    fecha_subida = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Formato ID: {self.id}, Nombre: {self.nombre}, URL: {self.archivo_url}>'
+
