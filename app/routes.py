@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, make_response, send_from_directory
 from flask_jwt_extended import create_access_token, jwt_required
-from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion, Notificacion, Formato
+from .models import Usuario, Rol, Empleado, Encargado, Pregunta, Evaluacion, Notificacion, Formato, Evaluacion_Encargado
 from flask_cors import CORS
 from app import db
 from collections import defaultdict
@@ -316,6 +316,38 @@ def get_encargados():
         return jsonify(encargados_data), 200
     else:
         return jsonify({'message': 'No se encontraron encargados'}), 404
+
+@routes_blueprint.route('/usuarios/empleados-por-usuario/<int:usuario_id>', methods=['GET'])
+def obtener_empleados_por_usuario(usuario_id):
+    try:
+        # Verificar que el usuario exista
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario:
+            return jsonify([]), 200
+
+        # Obtener los encargados relacionados a este usuario desde encargado_usuario
+        encargados = usuario.encargados_relacionados
+
+        if not encargados:
+            return jsonify([]), 200
+
+        # Crear la lista de encargados
+        encargados_data = [
+            {
+                'id': encargado.id,
+                'nombre': encargado.nombre,
+                'puesto': encargado.puesto,
+                'num_empleado': encargado.num_empleado,
+                'tipo_evaluacion': encargado.tipo_evaluacion,
+                'activo': encargado.activo
+            }
+            for encargado in encargados
+        ]
+
+        return jsonify(encargados_data), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @routes_blueprint.route('/usuarios/empleados/<int:encargado_id>', methods=['GET'])
 def obtener_empleados_por_encargado(encargado_id):
@@ -994,6 +1026,62 @@ def guardar_evaluacion():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@routes_blueprint.route('/evaluacion_encargado/nueva', methods=['OPTIONS', 'POST'])
+def guardar_evaluacionEncargado():
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'OK'}), 200
+
+    try:
+        data = request.json
+        payload = data.get('payload')
+        id_usuario = data.get('idUsuario')
+        num_semana = data.get('num_semana')
+        tipo_evaluacion = data.get('tipo_evaluacion')
+
+        if not payload or not id_usuario:
+            return jsonify({'error': 'Datos incompletos'}), 400
+
+        for evaluacion_data in payload:
+            encargado_id = evaluacion_data.get('empleado_id')
+            calificaciones = evaluacion_data.get('calificaciones')
+            comentarios = evaluacion_data.get('comentarios')
+            ausente = evaluacion_data.get('ausente', False)
+
+            if isinstance(comentarios, list):
+                comentarios = ', '.join(comentarios)
+
+            ausente_db = 1 if ausente else 0
+
+            for aspecto_texto, calificacion in calificaciones.items():
+                # Buscar el aspecto en la base de datos por nombre
+                aspecto_db = Pregunta.query.filter_by(texto=aspecto_texto).first()
+
+                if aspecto_db:
+                    peso = aspecto_db.peso
+
+                porcentaje = calificacion * peso
+
+                nueva_evaluacion = Evaluacion_Encargado(
+                    encargado_id=encargado_id,
+                    usuario_id=id_usuario,
+                    fecha_evaluacion=datetime.now(),
+                    aspecto=aspecto_texto,
+                    total_puntos=calificacion,
+                    porcentaje_total=porcentaje,
+                    comentarios=comentarios,
+                    ausente=ausente_db,
+                    num_semana=num_semana,
+                    tipo_evaluacion=tipo_evaluacion
+                )
+                db.session.add(nueva_evaluacion)
+
+        db.session.commit()
+        return jsonify({'message': 'Evaluaciones guardadas correctamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 
 #----------------------------NOTIFICACIONES------------------------------------------------------
 @routes_blueprint.route('/notificaciones/nueva', methods=['OPTIONS', 'POST'])
@@ -1007,33 +1095,35 @@ def nueva_notificacion():
     try:
         data = request.get_json()
 
-        id_encargado = data['id_encargado']
-        id_empleado = data['id_empleado']
-        accion = data['accion']
-        activo = data['activo']
+        id_recibido = data.get('id')
+        nombre_recibido = data.get('nombre')
+        id_empleado = data.get('id_empleado')
+        accion = data.get('accion')
+        activo = data.get('activo')
 
+        if not id_recibido or not nombre_recibido:
+            return jsonify({'error': 'Se requieren los campos id y nombre'}), 400
 
         fecha_actual = datetime.now()
 
-        if isinstance(id_encargado, list):
-            for encargado_id in id_encargado:
-                nueva_notificacion = Notificacion(
-                    id_encargado=encargado_id,
-                    id_empleado=id_empleado,
-                    accion=accion,
-                    fecha=fecha_actual
-                )
-                db.session.add(nueva_notificacion)
+        # Primero buscar en tabla Encargado
+        encargado = Encargado.query.filter_by(id=id_recibido).first()
+        if encargado and encargado.nombre.strip().lower() == nombre_recibido.strip().lower():
+            id_encargado = encargado.id
+        else:
+            # Si no coincide o no se encuentra, buscar en tabla Usuario
+            usuario = Usuario.query.filter_by(id=id_recibido).first()
+            if not usuario or usuario.nombre.strip().lower() != nombre_recibido.strip().lower():
+                return jsonify({'error': 'No se encontró un encargado o usuario con el id y nombre proporcionados'}), 404
+            id_encargado = usuario.id
 
-        else: 
-            nueva_notificacion = Notificacion(
-                id_encargado=id_encargado,
-                id_empleado=id_empleado,
-                accion=accion,
-                fecha=fecha_actual
-            )
-            db.session.add(nueva_notificacion)
-
+        nueva_notificacion = Notificacion(
+            id_encargado=id_encargado,
+            id_empleado=id_empleado,
+            accion=accion,
+            fecha=fecha_actual
+        )
+        db.session.add(nueva_notificacion)
         db.session.commit()
 
         return jsonify({'message': 'Notificación creada correctamente'}), 201
@@ -1090,6 +1180,36 @@ def obtener_notificaciones():
 
     notificaciones = Notificacion.query.filter(
         Notificacion.id_encargado == encargado_id,
+        Notificacion.fecha >= fecha_limite
+    ).all()
+
+    if not notificaciones:
+        return jsonify({'message': 'No hay notificaciones'}), 404
+
+    notificaciones_data = []
+    for notificacion in notificaciones:
+        notificaciones_data.append({
+            'id': notificacion.id,
+            'activo': notificacion.activo,
+            'id_encargado': notificacion.id_encargado,
+            'id_empleado': notificacion.id_empleado,
+            'accion': notificacion.accion,
+            'fecha': notificacion.fecha.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    return jsonify({'notificaciones': notificaciones_data}), 200
+
+@routes_blueprint.route('/notificaciones-usuario', methods=['OPTIONS', 'GET'])
+def obtener_notificacionesUsuario():
+
+    usuario_id = request.args.get('usuario_id', type=int)
+    if not usuario_id:
+        return jsonify({'error': 'Falta el parámetro usuario_id'}), 400
+
+    fecha_limite = datetime.utcnow() - timedelta(days=60) # 60 dias atras desde hoy
+
+    notificaciones = Notificacion.query.filter(
+        Notificacion.id_encargado == usuario_id,
         Notificacion.fecha >= fecha_limite
     ).all()
 
@@ -1627,6 +1747,134 @@ def obtener_evaluaciones():
                     'tiene_ausencia': datos['tiene_ausencia'],
                     'fecha_evaluacion': datos['fecha_evaluacion'].strftime('%Y-%m-%d') if datos['fecha_evaluacion'] else None
                 } for emp_id, datos in resultados.items()
+            ]
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}),500
+
+@routes_blueprint.route('/evaluaciones-usuario', methods=['OPTIONS','GET'])
+def obtener_evaluacionesUsuario():
+    #Validar parametros
+    usuario_id = request.args.get('usuario_id')
+    if not usuario_id:
+        return jsonify({'error': 'Se requiere ID del usuario'}), 400
+
+    try:
+        # 1. Obtener la fecha de la evaluación más reciente para cada empleado
+        subquery = db.session.query(
+            Evaluacion_Encargado.encargado_id,
+            db.func.max(Evaluacion_Encargado.fecha_evaluacion).label('fecha_reciente')
+        ).filter(
+            Evaluacion_Encargado.usuario_id == usuario_id
+        ).group_by(
+            Evaluacion_Encargado.encargado_id
+        ).subquery()
+
+        # 2. Obtener TODAS las evaluaciones más recientes para cada empleado
+        evaluaciones = db.session.query(Evaluacion_Encargado).join(
+            subquery,
+            db.and_(
+                Evaluacion_Encargado.encargado_id == subquery.c.encargado_id,
+                Evaluacion_Encargado.fecha_evaluacion == subquery.c.fecha_reciente,
+                Evaluacion_Encargado.usuario_id == usuario_id
+            )
+        ).all()
+
+        if not evaluaciones:
+            return jsonify({'error': 'No hay evaluaciones'}), 404
+
+        # Obtener IDs de empleados únicos
+        encargado_ids = {eval.encargado_id for eval in evaluaciones}
+
+        # 3. Consultar nombres de empleados y tipo_evaluacion desde la tabla Encargado
+        encargados = db.session.query(Encargado.id, Encargado.nombre, Encargado.tipo_evaluacion).filter(
+            Encargado.id.in_(encargado_ids)
+        ).all()
+        encargado_dict = {enc.id: {'nombre': enc.nombre, 'tipo_evaluacion': enc.tipo_evaluacion} for enc in encargados}
+
+        # 4. Agrupar evaluaciones por encargado y fecha
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
+        for eval in evaluaciones:
+            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            encargado_id = eval.encargado_id
+            evaluaciones_agrupadas[encargado_id][fecha_str].append(eval)
+        
+        # 5. Procesar datos por encargado
+        resultados = defaultdict(lambda: {
+            'suma_porcentaje_total': 0.0,
+            'total_evaluaciones_completas': 0,
+            'nombre': 'Nombre no encontrado',
+            'tiene_ausencia': False,
+            'fecha_evaluacion': None
+        })
+        
+        # Inicializar datos para todos los encargados
+        for encargado_id in encargado_ids:
+            resultados[encargado_id]['nombre'] = encargado_dict.get(encargado_id, {}).get('nombre', 'Nombre no encontrado')
+        
+        # Contar evaluaciones completas (con 9 o 8 aspectos según tipo_evaluacion del encargado) y sumar porcentajes
+        for encargado_id, fechas in evaluaciones_agrupadas.items():
+            tipo_encargado = encargado_dict.get(encargado_id, {}).get('tipo_evaluacion', 1)
+            for fecha, evals in fechas.items():
+                # Guardar la fecha de evaluación
+                fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
+                if resultados[encargado_id]['fecha_evaluacion'] is None or fecha_dt > resultados[encargado_id]['fecha_evaluacion']:
+                    resultados[encargado_id]['fecha_evaluacion'] = fecha_dt
+                
+                # Verificar si hay alguna evaluación con ausente=1 para este encargado y fecha
+                if any(eval.ausente == 1 for eval in evals):
+                    resultados[encargado_id]['tiene_ausencia'] = True
+                
+                # Solo considerar evaluaciones completas donde ausente=0
+                evals_presentes = [eval for eval in evals if eval.ausente == 0]
+                
+                if evals_presentes:
+                    total_aspectos_requeridos = 9 if tipo_encargado == 1 else 8
+
+                    if len(evals_presentes) == total_aspectos_requeridos:
+                        resultados[encargado_id]['total_evaluaciones_completas'] += 1
+                        # Sumar los porcentajes de todos los aspectos para esta evaluación
+                        suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals_presentes)
+                        resultados[encargado_id]['suma_porcentaje_total'] += suma_porcentaje
+
+        # 6. Calcular porcentaje_final correctamente
+        for encargado_id, datos in resultados.items():
+            if datos['total_evaluaciones_completas'] > 0:
+                # Calcular el promedio de porcentaje final
+                # Cada evaluación completa suma 500 puntos (9 aspectos)
+                datos['porcentaje_final'] = (datos['suma_porcentaje_total'] / (500 * datos['total_evaluaciones_completas'])) * 100
+                datos['porcentaje_final'] = min(datos['porcentaje_final'], 100.0)  # Limitar a 100%
+            else:
+                datos['porcentaje_final'] = 0.0
+
+        # 7. Calcular promedios solo de encargados con evaluaciones completas y sin ausencias
+        promedios = [datos['porcentaje_final'] for encargado_id, datos in resultados.items() 
+                    if datos['total_evaluaciones_completas'] > 0]
+        promedio_general = sum(promedios) / len(promedios) if promedios else 0
+
+        # 8. Determinar el rango de fechas para el período
+        fechas_evaluacion = [datos['fecha_evaluacion'] for datos in resultados.values() if datos['fecha_evaluacion'] is not None]
+        if fechas_evaluacion:
+            fecha_min = min(fechas_evaluacion)
+            fecha_max = max(fechas_evaluacion)
+        else:
+            # Si no hay fechas, usar la fecha actual
+            fecha_min = fecha_max = datetime.now()
+
+        # 9. Formatear respuesta
+        return jsonify({
+            'promedio_general': round(promedio_general, 2),
+            'total_empleados': len(resultados),
+            'detalle_empleados': [
+                {
+                    'nombre': datos['nombre'],
+                    'encargado': enc_id,
+                    'calificacion_final': round(datos['porcentaje_final'], 2) if 'porcentaje_final' in datos else 0,
+                    'total_evaluaciones': datos['total_evaluaciones_completas'],
+                    'tiene_ausencia': datos['tiene_ausencia'],
+                    'fecha_evaluacion': datos['fecha_evaluacion'].strftime('%Y-%m-%d') if datos['fecha_evaluacion'] else None
+                } for enc_id, datos in resultados.items()
             ]
         }), 200
 

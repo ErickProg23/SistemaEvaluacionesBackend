@@ -81,7 +81,7 @@ class Encargado(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     tipo_evaluacion = db.Column(db.Integer, nullable=False)
 
-    encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
+    usuarios = db.relationship('Usuario', secondary='encargado_usuario', backref='encargados_relacionados')
     empleados = db.relationship(
         'Empleado',
         secondary='empleado_encargado',
@@ -155,6 +155,25 @@ class Evaluacion(db.Model):
     
     def __repr__(self):
         return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
+
+class Evaluacion_Encargado(db.Model):
+    __tablename__='evaluacion_encargado'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    fecha_evaluacion = db.Column(db.Date, nullable=False)
+    total_puntos = db.Column(db.Numeric(5,2), nullable=False)
+    porcentaje_total = db.Column(db.Numeric(5,2), nullable=False)
+    comentarios = db.Column(db.String(255), nullable=False)
+    aspecto = db.Column(db.String(255), nullable=False)
+    ausente = db.Column(db.Boolean, default=True)
+    a_tiempo = db.Column(db.Boolean, default=True)
+    num_semana = db.Column(db.Integer, nullable=False)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
+    
+    def __repr__(self):
+        return f'<Evaluacion ID: {self.id}, Encargado ID: {self.encargado_id},Usuario ID: {self.usuario_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
 
 class Notificacion(db.Model):
     __tablename__ = 'notificaciones'
