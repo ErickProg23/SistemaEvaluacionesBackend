@@ -22,7 +22,7 @@ def nueva_notificacion():
     try:
         data = request.get_json()
 
-        id_recibido = data.get('id_encargado')
+        id_recibido = data.get('id')
         nombre_recibido = data.get('nombre')
         id_empleado = data.get('id_empleado')
         accion = data.get('accion')
