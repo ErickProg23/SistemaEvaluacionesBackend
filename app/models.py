@@ -51,6 +51,7 @@ class Empleado(db.Model):
     num_empleado = db.Column(db.Integer, nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
 
      # Relación con el modelo Encargado
     # Update this relationship
@@ -64,7 +65,7 @@ class Empleado(db.Model):
     rol = db.relationship('Rol' , backref='empleados')
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluadores {self.encargados}, Rol {self.rol_id}>"
+        return f"<Nombre {self.nombre}, Puesto{self.puesto}, Activo{self.activo}, Evaluadores {self.encargados}, Rol {self.rol_id}, Tipo_Evaluacion {self.tipo_evaluacion}>"
     
 
 class Encargado(db.Model):
@@ -78,8 +79,9 @@ class Encargado(db.Model):
     activo = db.Column(db.Boolean, default=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
 
-    encargados = db.relationship('Usuario', secondary='encargado_usuario', backref='usuarios_rel')
+    usuarios = db.relationship('Usuario', secondary='encargado_usuario', backref='encargados_relacionados')
     empleados = db.relationship(
         'Empleado',
         secondary='empleado_encargado',
@@ -89,7 +91,7 @@ class Encargado(db.Model):
     )
 
     def __repr__(self):
-        return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}>"
+        return f"<ID {self.id}, Nombre {self.nombre}, Evaluador{self.evaluador_id}, Activo{self.activo},Rol {self.rol_id}, Puesto {self.puesto}, Num. Empleado {self.num_empleado}, Tipo evaluacion {self.tipo_evaluacion}>"
     
 class EncargadoUsuario(db.Model):
     __tablename__='encargado_usuario'
@@ -101,22 +103,27 @@ class EncargadoUsuario(db.Model):
         return f"<Encargado {self.encargado_id}, Usuario {self.usuario_id}>"
 
 class Pregunta(db.Model):
-    __tablename__ = 'pregunta'
+    __tablename__ = 'aspecto'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     texto = db.Column(db.String(500), nullable=False)
     peso = db.Column(db.Numeric(5, 2), nullable=False)  # Manejo de decimales
     descripcion = db.Column(db.String(65535))
+    tipo = db.Column(db.Integer, nullable=False)
+    estado = db.Column(db.Integer, nullable=False)
 
     def to_dict(self):
         return {
             "id": self.id,
             "texto": self.texto,
-            "descripcion": self.descripcion
+            "peso": float(self.peso),  # Convertir a float
+            "descripcion": self.descripcion,
+            "tipo": self.tipo,
+            "estado": self.estado
         }
 
     def __repr__(self):
-        return f"<Texto {self.texto}, Peso {self.peso}, Descripcion {self.descripcion}>"
+        return f"<Texto {self.texto}, Peso {self.peso}, Descripcion {self.descripcion}, Tipo {self.tipo}, Estado {self.estado}>"
 
 
 class Respuesta(db.Model):
@@ -143,9 +150,30 @@ class Evaluacion(db.Model):
     aspecto = db.Column(db.String(255), nullable=False)
     ausente = db.Column(db.Boolean, default=True)
     a_tiempo = db.Column(db.Boolean, default=True)
+    num_semana = db.Column(db.Integer, nullable=False)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
     
     def __repr__(self):
-        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}>'
+        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
+
+class Evaluacion_Encargado(db.Model):
+    __tablename__='evaluacion_encargado'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    encargado_id = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    fecha_evaluacion = db.Column(db.Date, nullable=False)
+    total_puntos = db.Column(db.Numeric(5,2), nullable=False)
+    porcentaje_total = db.Column(db.Numeric(5,2), nullable=False)
+    comentarios = db.Column(db.String(255), nullable=False)
+    aspecto = db.Column(db.String(255), nullable=False)
+    ausente = db.Column(db.Boolean, default=True)
+    a_tiempo = db.Column(db.Boolean, default=True)
+    num_semana = db.Column(db.Integer, nullable=False)
+    tipo_evaluacion = db.Column(db.Integer, nullable=False)
+    
+    def __repr__(self):
+        return f'<Evaluacion ID: {self.id}, Encargado ID: {self.encargado_id},Usuario ID: {self.usuario_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
 
 class Notificacion(db.Model):
     __tablename__ = 'notificaciones'
@@ -163,3 +191,16 @@ class Notificacion(db.Model):
 
     def __repr__(self):
         return f'<Notificacion ID: {self.id}, Encargado ID: {self.id}, Empleado ID: {self.id}, Accion: {self.accion}, Fecha: {self.fecha}, Activo: {self.activo}>'
+
+class Formato(db.Model):
+    __tablename__ = 'formatos'
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(255), nullable=False)
+    descripcion = db.Column(db.Text)
+    archivo_url = db.Column(db.String(500), nullable=False)
+    fecha_subida = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Formato ID: {self.id}, Nombre: {self.nombre}, URL: {self.archivo_url}>'
+
