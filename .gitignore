@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+env/
+venv/
+ENV/
+*.env
+
+# VSCode settings
+.vscode/
+
+# Logs
+*.log
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.egg-info/
+
+# MacOS
+.DS_Store
+
+# Node modules (para frontend)
+node_modules/
+
+# Build output (para frontend Vue)
+dist/
+
+# archivos locales
+*.sqlite3
