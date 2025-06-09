@@ -1,5 +1,7 @@
 from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario
+from app.models import Empleado, Encargado, Usuario, Evaluacion
+from app import db
+from collections import defaultdict
 
 
 # Definición del Blueprint para las rutas de obtención de datos
