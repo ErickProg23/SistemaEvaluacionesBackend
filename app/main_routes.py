@@ -77,7 +77,7 @@ def obtener_ultima_fecha_evaluacion():
 
         evaluacion_existente = db.session.query(Evaluacion).filter_by(
             encargado_id=id_encargado, num_semana=semana
-        ).firts()
+        ).first()
 
         #Si existe una evaluación, devolver true
         ya_evaluo = evaluacion_existente is not None
