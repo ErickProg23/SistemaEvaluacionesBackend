@@ -76,7 +76,7 @@ def obtener_ultima_fecha_evaluacion():
             return jsonify({'error': 'Faltan parámetros requeridos'}), 400
 
         evaluacion_existente = db.session.query(Evaluacion).filter_by(
-            encargado_id=id_encargado, semana=semana
+            encargado_id=id_encargado, num_semana=semana
         ).firts()
 
         #Si existe una evaluación, devolver true
