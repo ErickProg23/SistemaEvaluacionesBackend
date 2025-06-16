@@ -120,7 +120,7 @@ def actualizar_usuario(id):
             'usuario': {
                 'id': usuario.id,
                 'nombre': usuario.nombre,
-                 usuario': usuario usuario,
+                'usuario': usuario.usuario,
                 'rol_id': usuario.rol_id,
                 'activo': usuario.activo
             }
