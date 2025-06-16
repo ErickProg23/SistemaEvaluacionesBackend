@@ -48,7 +48,7 @@ def crear_usuario():
             return jsonify({'message': 'Faltan datos requeridos'}), 400
         
         # Verificar si ya existe un usuario con ese usuario
-        usuario_existente = Usuario.query.filter_by usuario=data[ 'usuario']).first()
+        usuario_existente = Usuario.query.filter_by usuario=data([ 'usuario']).first()
         if usuario_existente:
             return jsonify({'message': 'Ya existe un usuario con ese usuario'}), 409
         
@@ -99,7 +99,7 @@ def actualizar_usuario(id):
         
         if  usuario' in data:
             # Verificar si el usuario ya está en uso por otro usuario
-            usuario_existente = Usuario.query.filter_by usuario=data[ 'usuario']).first()
+            usuario_existente = Usuario.query.filter_by usuario=data([ 'usuario']).first()
             if usuario_existente and usuario_existente.id != id:
                 return jsonify({'message': 'El usuario ya está en uso por otro usuario'}), 409
             usuario usuario = data[ 'usuario']
