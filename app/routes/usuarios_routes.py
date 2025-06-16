@@ -69,7 +69,7 @@ def crear_usuario():
             'usuario': {
                 'id': nuevo_usuario.id,
                 'nombre': nuevo_usuario.nombre,
-                 usuario': nuevo_usuario usuario,
+                'usuario': nuevo_usuario.usuario,
                 'rol_id': nuevo_usuario.rol_id,
                 'activo': nuevo_usuario.activo
             }
