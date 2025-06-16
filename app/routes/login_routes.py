@@ -9,7 +9,7 @@ login_bp = Blueprint('login_bp', __name__)
 @login_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    correo = data.get('correo')
+    usuario = data.get('usuario')
     contrasena = data.get('contrasena')
     nombre = data.get('nombre')
 
