@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta
+from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal
 from app import db
 from collections import defaultdict
 from datetime import datetime, date, timedelta
+from sqlalchemy.exc import IntegrityError
 # Importar los modelos necesarios
 
 
@@ -1632,3 +1633,58 @@ def obtener_evaluaciones_empleado(empleado_id):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
+def guardar_evaluacion():
+    data = request.get_json()
+
+    id_encargado = data.get('id_ecnargado')
+    num_semana = data.get('num_semana')
+    dato = data.get('dato')
+
+
+    if not all([id_encargado, num_semana, dato]):
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+    
+    try:
+        nueva_eval = EvaluacionTemporal(
+            id_encargado=id_encargado,
+            num_semana=num_semana,
+            dato=dato
+        )
+        db.session.add(nueva_eval)
+        db.session.commit()
+        return jsonify({'mensaje': 'Evaluación temporal guardada con éxito'}), 201
+    
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Error de integridad. ¿Duplicado?'}), 409
+
+    except Exception as e:
+        db.session.rollback()
+        print('Error:', e)
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+@evaluacion_bp.route('/buscar-evaluaciones-temporales', methods=['OPTIONS', 'GET'])
+def buscar_evaluaciones_temporales():
+    id_encargado = request.args.get('id_encargado')
+
+    if not id_encargado:
+        return jsonify({'error': 'Falta el id_encargado'}), 400
+    
+    try:
+        evaluacion = EvaluacionTemporal.query.filter_by(id_encargado=id_encargado).all
+
+        if evaluacion:
+            return jsonify({
+                'id': evaluacion.id,
+                'id_encargado': evaluacion.id_encargado,
+                'num_semana': evaluacion.num_semana,
+                'dato': evaluacion.dato
+            }), 200
+        else:
+            return jsonify({}), 200  # No hay evaluación guardada
+        
+    except Exception as e:
+        print("Error al buscar evaluación:", e)
+        return jsonify({'error': 'Error del servidor'}), 500

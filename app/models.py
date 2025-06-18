@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from app import db
+from sqlalchemy.dialects.mysql import JSON
 
 class Usuario(db.Model):
     __tablename__ = 'usuarios'  # Nombre de la tabla en la base de datos
@@ -204,3 +205,17 @@ class Formato(db.Model):
     def __repr__(self):
         return f'<Formato ID: {self.id}, Nombre: {self.nombre}, URL: {self.archivo_url}>'
 
+
+class EvaluacionTemporal(db.Model):
+    __tablename__ = 'evaluaciones_temporales'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    num_semana = db.Column(db.Integer, nullable=False)
+    dato = db.Column(JSON, nullable=False)
+
+    def __repr__(self):
+        return f'<EvaluacionTemporal ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
+    
+
+    
