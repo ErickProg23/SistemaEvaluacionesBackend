@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, make_response, request, jsonify
+from sqlalchemy import extract, func
 from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal
 from app import db
 from collections import defaultdict
@@ -1652,7 +1653,7 @@ def guardar_evaluacion_temporal():
     dato = data.get('dato')
 
 
-    if not all([id_encargado, num_semana, dato]):
+    if id_encargado is None or num_semana is None or dato is None:
         return jsonify({'error': 'Faltan datos requeridos'}), 400
     
     try:
