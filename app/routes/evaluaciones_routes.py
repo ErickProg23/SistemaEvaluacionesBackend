@@ -1677,29 +1677,26 @@ def guardar_evaluacion_temporal():
 @evaluacion_bp.route('/buscar-evaluaciones-temporales', methods=['OPTIONS', 'GET'])
 def buscar_evaluaciones_temporales():
     id_encargado = request.args.get('id_encargado')
-    num_semana = request.args.get('num_semana')
+    num_semana = request.args.get('num_semana', type=int)
 
-    if not id_encargado or not num_semana:
-        return jsonify({'error': 'Falta el id_encargado'}), 400
-    
+    if not id_encargado or num_semana is None:
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+
     try:
-        evaluaciones = evaluaciones = EvaluacionTemporal.query.filter_by(
+        evaluacion = EvaluacionTemporal.query.filter_by(
             id_encargado=id_encargado,
             num_semana=num_semana
-        ).all()
+        ).first()
 
-        if evaluaciones:
-            # Retornamos todas las evaluaciones encontradas (puedes cambiarlo si quieres solo una)
-            resultado = [{
-                'id': e.id,
-                'id_encargado': e.id_encargado,
-                'num_semana': e.num_semana,
-                'dato': e.dato
-            } for e in evaluaciones]
-
-            return jsonify(resultado), 200
+        if evaluacion:
+            return jsonify({
+                'id': evaluacion.id,
+                'id_encargado': evaluacion.id_encargado,
+                'num_semana': evaluacion.num_semana,
+                'dato': evaluacion.dato
+            }), 200
         else:
-            return jsonify([]), 200  # Lista vacía si no se encuentra nada
+            return jsonify({}), 200  # No se encontró la evaluación
 
     except Exception as e:
         print("Error al buscar evaluación:", e)
