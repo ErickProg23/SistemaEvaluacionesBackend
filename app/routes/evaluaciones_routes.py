@@ -1637,6 +1637,7 @@ def obtener_evaluaciones_empleado(empleado_id):
 @evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
 def guardar_evaluacion_temporal():
     data = request.get_json()
+    print("Datos recibidos", data)
 
     id_encargado = data.get('id_ecnargado')
     num_semana = data.get('num_semana')
