@@ -1635,7 +1635,7 @@ def obtener_evaluaciones_empleado(empleado_id):
         return jsonify({'error': str(e)}), 500
     
 @evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
-def guardar_evaluacion():
+def guardar_evaluacion_temporal():
     data = request.get_json()
 
     id_encargado = data.get('id_ecnargado')
