@@ -4,8 +4,16 @@ from app import db
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from sqlalchemy.exc import IntegrityError
+import logging
+import sys
 # Importar los modelos necesarios
 
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='[%(asctime)s] [%(levelname)s] %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Definición del Blueprint para las rutas de obtención de datos
 evaluacion_bp = Blueprint('evaluacion_bp', __name__)
@@ -1637,7 +1645,7 @@ def obtener_evaluaciones_empleado(empleado_id):
 @evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
 def guardar_evaluacion_temporal():
     data = request.get_json()
-    print("Datos recibidos", data)
+    logger.info(f"Datos recibidos para guardar evaluación temporal: {data}")
 
     id_encargado = data.get('id_ecnargado')
     num_semana = data.get('num_semana')
