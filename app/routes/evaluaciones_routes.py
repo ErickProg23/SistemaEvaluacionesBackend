@@ -1647,7 +1647,7 @@ def obtener_evaluaciones_empleado(empleado_id):
 def guardar_evaluacion_temporal():
     data = request.get_json(force=True)
 
-    id_encargado = data.get('id_ecnargado')
+    id_encargado = data.get('id_encargado')
     num_semana = data.get('num_semana')
     dato = data.get('dato')
 
