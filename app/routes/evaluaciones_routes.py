@@ -1715,3 +1715,34 @@ def buscar_evaluaciones_temporales():
     except Exception as e:
         print("Error al buscar evaluación:", e)
         return jsonify({'error': 'Error del servidor'}), 500
+
+@evaluacion_bp.route('/eliminar/evaluacion-temporal', methods=['OPTIONS', 'POST'])
+def eliminar_evaluacion_temporal():
+    data = request.get_json(force=True)
+
+    id_encargado = data.get('id_encargado')
+    num_semana = data.get('num_semana')
+
+    if id_encargado is None or num_semana is None:
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+
+    try:
+        # Buscar si existe esa evaluación temporal
+        evaluacion = EvaluacionTemporal.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion:
+            db.session.delete(evaluacion)
+            db.session.commit()
+            return jsonify({'mensaje': 'Evaluación temporal eliminada con éxito'}), 200
+        else:
+            return jsonify({'mensaje': 'No se encontró la evaluación temporal'}), 404
+
+    except Exception as e:
+        db.session.rollback()
+        print('Error:', e)
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+    
