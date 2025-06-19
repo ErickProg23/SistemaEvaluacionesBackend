@@ -186,16 +186,26 @@ def obtener_evaluaciones_todas():
             for encargado_id, fechas in encargados.items():
                 for fecha, evals in fechas.items():
                     if tipo == 3:
-                        # Agrupar por tipo_evaluacion del encargado que evaluó
+                        # Agrupar por tipo_evaluacion
                         evals_por_tipo = defaultdict(list)
                         for e in evals:
                             evals_por_tipo[e.tipo_evaluacion].append(e)
 
-                        if len(evals_por_tipo[1]) == 9 and len(evals_por_tipo[2]) == 8:
-                            suma1 = sum(float(e.porcentaje_total) for e in evals_por_tipo[1])
-                            suma2 = sum(float(e.porcentaje_total) for e in evals_por_tipo[2])
-                            promedio_suma = (suma1 + suma2) / 2
+                        suma_acumulada = 0.0
+                        conteo_validos = 0
 
+                        if len(evals_por_tipo[1]) == 9:
+                            suma1 = sum(float(e.porcentaje_total) for e in evals_por_tipo[1])
+                            suma_acumulada += suma1
+                            conteo_validos += 1
+
+                        if len(evals_por_tipo[2]) == 8:
+                            suma2 = sum(float(e.porcentaje_total) for e in evals_por_tipo[2])
+                            suma_acumulada += suma2
+                            conteo_validos += 1
+
+                        if conteo_validos > 0:
+                            promedio_suma = suma_acumulada / conteo_validos
                             resultados[empleado_id]['total_evaluaciones_completas'] += 1
                             resultados[empleado_id]['suma_porcentaje_total'] += promedio_suma
                             resultados[empleado_id]['nombre'] = empleado_info.get('nombre', 'Nombre no encontrado')
