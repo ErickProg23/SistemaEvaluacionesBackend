@@ -186,14 +186,14 @@ def obtener_evaluaciones_todas():
             for encargado_id, fechas in encargados.items():
                 for fecha, evals in fechas.items():
                     if tipo == 3:
-                        # Evaluación tipo 3: debe tener evaluaciones tipo 1 (9) y tipo 2 (8)
-                        evals_9 = [e for e in evals if len(evals) == 9]
-                        evals_8 = [e for e in evals if len(evals) == 8]
+                        # Agrupar por tipo_evaluacion del encargado que evaluó
+                        evals_por_tipo = defaultdict(list)
+                        for e in evals:
+                            evals_por_tipo[e.tipo_evaluacion].append(e)
 
-                        if len(evals) == 17:  # sumando 9 + 8 aspectos
-                            # Separar las dos evaluaciones y calcular el promedio de sus sumas
-                            suma1 = sum(float(e.porcentaje_total) for e in evals[:9])
-                            suma2 = sum(float(e.porcentaje_total) for e in evals[9:17])
+                        if len(evals_por_tipo[1]) == 9 and len(evals_por_tipo[2]) == 8:
+                            suma1 = sum(float(e.porcentaje_total) for e in evals_por_tipo[1])
+                            suma2 = sum(float(e.porcentaje_total) for e in evals_por_tipo[2])
                             promedio_suma = (suma1 + suma2) / 2
 
                             resultados[empleado_id]['total_evaluaciones_completas'] += 1
@@ -204,12 +204,11 @@ def obtener_evaluaciones_todas():
                     else:
                         aspectos_esperados = aspectos_por_tipo.get(tipo, 9)
                         if len(evals) == aspectos_esperados:
-                            suma = sum(float(eval.porcentaje_total) for eval in evals)
+                            suma = sum(float(e.porcentaje_total) for e in evals)
                             resultados[empleado_id]['total_evaluaciones_completas'] += 1
                             resultados[empleado_id]['suma_porcentaje_total'] += suma
                             resultados[empleado_id]['nombre'] = empleado_info.get('nombre', 'Nombre no encontrado')
                             resultados[empleado_id]['tipo_evaluacion'] = tipo
-
 
         # Calcular porcentaje final (base fija de 500 por evaluación)
         for empleado_id, datos in resultados.items():
