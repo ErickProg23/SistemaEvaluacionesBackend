@@ -1651,20 +1651,33 @@ def guardar_evaluacion_temporal():
     num_semana = data.get('num_semana')
     dato = data.get('dato')
 
-
     if id_encargado is None or num_semana is None or dato is None:
         return jsonify({'error': 'Faltan datos requeridos'}), 400
-    
+
     try:
-        nueva_eval = EvaluacionTemporal(
+        # Buscar si ya existe una evaluación temporal con ese id_encargado y num_semana
+        evaluacion_existente = EvaluacionTemporal.query.filter_by(
             id_encargado=id_encargado,
-            num_semana=num_semana,
-            dato=dato
-        )
-        db.session.add(nueva_eval)
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion_existente:
+            # Si existe, actualizamos el campo "dato"
+            evaluacion_existente.dato = dato
+            mensaje = 'Evaluación temporal actualizada con éxito'
+        else:
+            # Si no existe, la creamos
+            nueva_eval = EvaluacionTemporal(
+                id_encargado=id_encargado,
+                num_semana=num_semana,
+                dato=dato
+            )
+            db.session.add(nueva_eval)
+            mensaje = 'Evaluación temporal guardada con éxito'
+
         db.session.commit()
-        return jsonify({'mensaje': 'Evaluación temporal guardada con éxito'}), 201
-    
+        return jsonify({'mensaje': mensaje}), 200
+
     except IntegrityError:
         db.session.rollback()
         return jsonify({'error': 'Error de integridad. ¿Duplicado?'}), 409
@@ -1673,6 +1686,7 @@ def guardar_evaluacion_temporal():
         db.session.rollback()
         print('Error:', e)
         return jsonify({'error': 'Error en el servidor'}), 500
+
 
 @evaluacion_bp.route('/buscar-evaluaciones-temporales', methods=['OPTIONS', 'GET'])
 def buscar_evaluaciones_temporales():
