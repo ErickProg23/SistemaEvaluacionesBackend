@@ -1745,4 +1745,34 @@ def eliminar_evaluacion_temporal():
         print('Error:', e)
         return jsonify({'error': 'Error en el servidor'}), 500
 
+@evaluacion_bp.route('/buscar/evaluacion-existente', methods=['OPTIONS', 'GET'])
+def buscar_evaluacion_existente():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        # Obtener los parámetros desde la URL (query params)
+        id_encargado = request.args.get('id_encargado', type=int)
+        num_semana = request.args.get('num_semana', type=int)
+
+        # Validación
+        if id_encargado is None or num_semana is None:
+            return jsonify({'error': 'Faltan parámetros requeridos'}), 400
+
+        # Buscar si existe al menos una evaluación con esos datos
+        existe = Evaluacion.query.filter_by(
+            encargado_id=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if existe:
+            return jsonify({'existe': True}), 200
+        else:
+            return jsonify({'existe': False}), 200
+
+    except Exception as e:
+        print(f"Error al buscar evaluación: {e}")
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+
     
