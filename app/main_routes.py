@@ -63,7 +63,29 @@ def crear_registro_encargado():
         db.session.rollback()
         return jsonify({'message': f'Error al crear registro de encargado: {str(e)}'}), 500
 
+@routes_blueprint.route('/ultimaFechaEvaluacion', methods=['OPTIONS', 'GET'])
+def obtener_ultima_fecha_evaluacion():
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        # Obtener la última fecha de evaluación
+        id_encargado = request.args.get('id_encargado', type=int)
+        semana = request.args.get('semana', type=int)
 
+        if id_encargado is None or semana is None:
+            return jsonify({'error': 'Faltan parámetros requeridos'}), 400
+
+        evaluacion_existente = db.session.query(Evaluacion).filter_by(
+            encargado_id=id_encargado, num_semana=semana
+        ).first()
+
+        #Si existe una evaluación, devolver true
+        ya_evaluo = evaluacion_existente is not None
+        return jsonify({'ya_evaluo': ya_evaluo}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 
 @routes_blueprint.route('/usuarios/verificar/<int:num_empleado>', methods=['OPTIONS', 'GET'])
 def verificar_numero_empleado(num_empleado):

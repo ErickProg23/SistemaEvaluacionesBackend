@@ -23,7 +23,7 @@ def obtener_todos_usuarios():
             usuario_data = {
                 'id': usuario.id,
                 'nombre': usuario.nombre,
-                'correo': usuario.correo,
+                'usuario': usuario.usuario,
                 'rol_id': usuario.rol_id,
                 'activo': usuario.activo
             }
@@ -44,18 +44,18 @@ def crear_usuario():
         data = request.get_json()
         
         # Validar datos requeridos
-        if not data.get('nombre') or not data.get('correo') or not data.get('password') or not data.get('rol_id'):
+        if not data.get('nombre') or not data.get('usuario') or not data.get('password') or not data.get('rol_id'):
             return jsonify({'message': 'Faltan datos requeridos'}), 400
         
-        # Verificar si ya existe un usuario con ese correo
-        usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
+        # Verificar si ya existe un usuario con ese usuario
+        usuario_existente = Usuario.query.filter_by (usuario=data['usuario']).first()
         if usuario_existente:
-            return jsonify({'message': 'Ya existe un usuario con ese correo'}), 409
+            return jsonify({'message': 'Ya existe un usuario con ese usuario'}), 409
         
         # Crear nuevo usuario
         nuevo_usuario = Usuario(
             nombre=data['nombre'],
-            correo=data['correo'],
+            usuario=data['usuario'],
             contrasena=data['password'],  # Considera encriptar la contraseña
             rol_id=data['rol_id'],
             activo=True
@@ -69,7 +69,7 @@ def crear_usuario():
             'usuario': {
                 'id': nuevo_usuario.id,
                 'nombre': nuevo_usuario.nombre,
-                'correo': nuevo_usuario.correo,
+                'usuario': nuevo_usuario.usuario,
                 'rol_id': nuevo_usuario.rol_id,
                 'activo': nuevo_usuario.activo
             }
@@ -97,12 +97,12 @@ def actualizar_usuario(id):
         if 'nombre' in data:
             usuario.nombre = data['nombre']
         
-        if 'correo' in data:
-            # Verificar si el correo ya está en uso por otro usuario
-            usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
+        if  'usuario' in data:
+            # Verificar si el usuario ya está en uso por otro usuario
+            usuario_existente = Usuario.query.filter_by (usuario=data['usuario']).first()
             if usuario_existente and usuario_existente.id != id:
-                return jsonify({'message': 'El correo ya está en uso por otro usuario'}), 409
-            usuario.correo = data['correo']
+                return jsonify({'message': 'El usuario ya está en uso por otro usuario'}), 409
+            usuario.usuario = data[ 'usuario']
         
         if 'password' in data and data['password']:
             usuario.contrasena = data['password']  # Considera encriptar la contraseña
@@ -120,7 +120,7 @@ def actualizar_usuario(id):
             'usuario': {
                 'id': usuario.id,
                 'nombre': usuario.nombre,
-                'correo': usuario.correo,
+                'usuario': usuario.usuario,
                 'rol_id': usuario.rol_id,
                 'activo': usuario.activo
             }

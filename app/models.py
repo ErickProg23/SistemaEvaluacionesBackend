@@ -1,13 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 from app import db
+from sqlalchemy.dialects.mysql import JSON
 
 class Usuario(db.Model):
     __tablename__ = 'usuarios'  # Nombre de la tabla en la base de datos
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # id como clave primaria y autoincrementable
     nombre = db.Column(db.String(255),unique=True, nullable=False)  # Nombre del usuario
-    correo = db.Column(db.String(255), unique=True, nullable=False)  # Correo único
+    usuario = db.Column(db.String(255), unique=True, nullable=False)  # Usuario unico
     contrasena = db.Column(db.String(50), nullable=False)  # Contraseña encriptada
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)  # Clave foránea a la tabla "roles"
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)  # Fecha de creación, por defecto la hora actual
@@ -17,7 +18,7 @@ class Usuario(db.Model):
     rol = db.relationship('Rol', backref=db.backref('usuarios', lazy=True))
 
     def __repr__(self):
-        return f"<Nombre {self.nombre}, Correo {self.correo}, Rol {self.rol_id}, Activo{self.activo}>"
+        return f"<Nombre {self.nombre}, Usuario {self.usuario}, Rol {self.rol_id}, Activo{self.activo}>"
     
 
 class Rol(db.Model):
@@ -204,3 +205,17 @@ class Formato(db.Model):
     def __repr__(self):
         return f'<Formato ID: {self.id}, Nombre: {self.nombre}, URL: {self.archivo_url}>'
 
+
+class EvaluacionTemporal(db.Model):
+    __tablename__ = 'evaluaciones_temporales'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    num_semana = db.Column(db.Integer, nullable=False)
+    dato = db.Column(JSON, nullable=False)
+
+    def __repr__(self):
+        return f'<EvaluacionTemporal ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
+    
+
+    

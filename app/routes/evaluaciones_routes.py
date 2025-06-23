@@ -1,10 +1,20 @@
-from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta
+from flask import Blueprint, make_response, request, jsonify
+from sqlalchemy import extract, func
+from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal
 from app import db
 from collections import defaultdict
 from datetime import datetime, date, timedelta
+from sqlalchemy.exc import IntegrityError
+import logging
+import sys
 # Importar los modelos necesarios
 
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='[%(asctime)s] [%(levelname)s] %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Definición del Blueprint para las rutas de obtención de datos
 evaluacion_bp = Blueprint('evaluacion_bp', __name__)
@@ -172,16 +182,43 @@ def obtener_evaluaciones_todas():
         for empleado_id, encargados in evaluaciones_agrupadas.items():
             empleado_info = empleados_dict.get(empleado_id, {})
             tipo = empleado_info.get('tipo_evaluacion', 1)
-            aspectos_esperados = aspectos_por_tipo.get(tipo, 9)
 
             for encargado_id, fechas in encargados.items():
                 for fecha, evals in fechas.items():
-                    if len(evals) == aspectos_esperados:
-                        resultados[empleado_id]['total_evaluaciones_completas'] += 1
-                        suma = sum(float(eval.porcentaje_total) for eval in evals)
-                        resultados[empleado_id]['suma_porcentaje_total'] += suma
-                        resultados[empleado_id]['nombre'] = empleado_info.get('nombre', 'Nombre no encontrado')
-                        resultados[empleado_id]['tipo_evaluacion'] = tipo
+                    if tipo == 3:
+                        # Agrupar por tipo_evaluacion
+                        evals_por_tipo = defaultdict(list)
+                        for e in evals:
+                            evals_por_tipo[e.tipo_evaluacion].append(e)
+
+                        suma_acumulada = 0.0
+                        conteo_validos = 0
+
+                        if len(evals_por_tipo[1]) == 9:
+                            suma1 = sum(float(e.porcentaje_total) for e in evals_por_tipo[1])
+                            suma_acumulada += suma1
+                            conteo_validos += 1
+
+                        if len(evals_por_tipo[2]) == 8:
+                            suma2 = sum(float(e.porcentaje_total) for e in evals_por_tipo[2])
+                            suma_acumulada += suma2
+                            conteo_validos += 1
+
+                        if conteo_validos > 0:
+                            promedio_suma = suma_acumulada / conteo_validos
+                            resultados[empleado_id]['total_evaluaciones_completas'] += 1
+                            resultados[empleado_id]['suma_porcentaje_total'] += promedio_suma
+                            resultados[empleado_id]['nombre'] = empleado_info.get('nombre', 'Nombre no encontrado')
+                            resultados[empleado_id]['tipo_evaluacion'] = tipo
+
+                    else:
+                        aspectos_esperados = aspectos_por_tipo.get(tipo, 9)
+                        if len(evals) == aspectos_esperados:
+                            suma = sum(float(e.porcentaje_total) for e in evals)
+                            resultados[empleado_id]['total_evaluaciones_completas'] += 1
+                            resultados[empleado_id]['suma_porcentaje_total'] += suma
+                            resultados[empleado_id]['nombre'] = empleado_info.get('nombre', 'Nombre no encontrado')
+                            resultados[empleado_id]['tipo_evaluacion'] = tipo
 
         # Calcular porcentaje final (base fija de 500 por evaluación)
         for empleado_id, datos in resultados.items():
@@ -1632,3 +1669,137 @@ def obtener_evaluaciones_empleado(empleado_id):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
+def guardar_evaluacion_temporal():
+    data = request.get_json(force=True)
+
+    id_encargado = data.get('id_encargado')
+    num_semana = data.get('num_semana')
+    dato = data.get('dato')
+
+    if id_encargado is None or num_semana is None or dato is None:
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+
+    try:
+        # Buscar si ya existe una evaluación temporal con ese id_encargado y num_semana
+        evaluacion_existente = EvaluacionTemporal.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion_existente:
+            # Si existe, actualizamos el campo "dato"
+            evaluacion_existente.dato = dato
+            mensaje = 'Evaluación temporal actualizada con éxito'
+        else:
+            # Si no existe, la creamos
+            nueva_eval = EvaluacionTemporal(
+                id_encargado=id_encargado,
+                num_semana=num_semana,
+                dato=dato
+            )
+            db.session.add(nueva_eval)
+            mensaje = 'Evaluación temporal guardada con éxito'
+
+        db.session.commit()
+        return jsonify({'mensaje': mensaje}), 200
+
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Error de integridad. ¿Duplicado?'}), 409
+
+    except Exception as e:
+        db.session.rollback()
+        print('Error:', e)
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+
+@evaluacion_bp.route('/buscar-evaluaciones-temporales', methods=['OPTIONS', 'GET'])
+def buscar_evaluaciones_temporales():
+    id_encargado = request.args.get('id_encargado')
+    num_semana = request.args.get('num_semana', type=int)
+
+    if not id_encargado or num_semana is None:
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+
+    try:
+        evaluacion = EvaluacionTemporal.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion:
+            return jsonify({
+                'id': evaluacion.id,
+                'id_encargado': evaluacion.id_encargado,
+                'num_semana': evaluacion.num_semana,
+                'dato': evaluacion.dato
+            }), 200
+        else:
+            return jsonify({}), 200  # No se encontró la evaluación
+
+    except Exception as e:
+        print("Error al buscar evaluación:", e)
+        return jsonify({'error': 'Error del servidor'}), 500
+
+@evaluacion_bp.route('/eliminar/evaluacion-temporal', methods=['OPTIONS', 'POST'])
+def eliminar_evaluacion_temporal():
+    data = request.get_json(force=True)
+
+    id_encargado = data.get('id_encargado')
+    num_semana = data.get('num_semana')
+
+    if id_encargado is None or num_semana is None:
+        return jsonify({'error': 'Faltan datos requeridos'}), 400
+
+    try:
+        # Buscar si existe esa evaluación temporal
+        evaluacion = EvaluacionTemporal.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion:
+            db.session.delete(evaluacion)
+            db.session.commit()
+            return jsonify({'mensaje': 'Evaluación temporal eliminada con éxito'}), 200
+        else:
+            return jsonify({'mensaje': 'No se encontró la evaluación temporal'}), 404
+
+    except Exception as e:
+        db.session.rollback()
+        print('Error:', e)
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+@evaluacion_bp.route('/buscar/evaluacion-existente', methods=['OPTIONS', 'GET'])
+def buscar_evaluacion_existente():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        # Obtener los parámetros desde la URL (query params)
+        id_encargado = request.args.get('id_encargado', type=int)
+        num_semana = request.args.get('num_semana', type=int)
+
+        # Validación
+        if id_encargado is None or num_semana is None:
+            return jsonify({'error': 'Faltan parámetros requeridos'}), 400
+
+        # Buscar si existe al menos una evaluación con esos datos
+        existe = Evaluacion.query.filter_by(
+            encargado_id=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if existe:
+            return jsonify({'existe': True}), 200
+        else:
+            return jsonify({'existe': False}), 200
+
+    except Exception as e:
+        print(f"Error al buscar evaluación: {e}")
+        return jsonify({'error': 'Error en el servidor'}), 500
+
+
+    

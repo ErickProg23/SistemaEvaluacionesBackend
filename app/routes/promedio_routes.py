@@ -95,7 +95,7 @@ def obtener_promedio_encargados():
                 divisor = 500  # Valor por defecto para tipo 1 (9 aspectos)
                 
                 if tipo_encargado == 2:
-                    divisor = 400  # Para tipo 2 (8 aspectos)
+                    divisor = 500  # Para tipo 2 (8 aspectos)
                 
                 # Calcular el promedio de porcentaje final
                 porcentaje_final = (datos['suma_porcentaje_total'] / (divisor * datos['total_evaluaciones_completas'])) * 100

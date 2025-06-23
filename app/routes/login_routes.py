@@ -9,12 +9,12 @@ login_bp = Blueprint('login_bp', __name__)
 @login_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    correo = data.get('correo')
+    usuario = data.get('usuario')
     contrasena = data.get('contrasena')
     nombre = data.get('nombre')
 
     # Busca al usuario en la base de datos
-    usuario = Usuario.query.filter_by(correo=correo).first()
+    usuario = Usuario.query.filter_by(usuario=usuario).first()
 
     # Verificar si el usuario existe y la contraseña es correcta
     if contrasena and usuario and usuario.contrasena == contrasena:
@@ -23,7 +23,7 @@ def login():
             return jsonify({'message': 'Cuenta desactivada. Contacte al administrador.'}), 403
             
         # Generar un token de acceso
-        access_token = create_access_token(identity={'correo': usuario.correo})
+        access_token = create_access_token(identity={'usuario': usuario.usuario})
 
         # Recupera el rol_id del usuario
         rol_id = usuario.rol_id  # Asegúrate de que `Usuario` tiene una columna llamada `rol_id`
@@ -47,4 +47,4 @@ def login():
         {'usuario_id': usuario_id},
         {'tipo_evaluacion': tipo_evaluacion}), 200
 
-    return jsonify({'message': 'Correo o contraseña incorrectos'}), 401
+    return jsonify({'message': 'Usuario o contraseña incorrectos'}), 401
