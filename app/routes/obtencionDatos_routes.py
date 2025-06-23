@@ -198,7 +198,7 @@ def obtener_encargado(id):
     if encargado:
         # Construcción del resultado con la información del evaluador
         encargados_usuarios = []
-        for usuario in encargado.encargados:
+        for usuario in encargado.usuarios:
             encargados_usuarios.append({
                 'id': usuario.id,
                 'nombre': usuario.nombre
