@@ -256,7 +256,7 @@ def obtener_evaluaciones_todas():
 def obtener_evaluaciones_completas_por_encargado():
     if request.method == 'OPTIONS':
         return '', 200
-
+    
     try:
         # Parámetros
         encargado_id = request.args.get('encargado_id', type=int)
@@ -265,6 +265,15 @@ def obtener_evaluaciones_completas_por_encargado():
 
         if not encargado_id:
             return jsonify({'error': 'encargado_id es requerido'}), 400
+        
+        # Obtener tipo de evaluación del encargado
+        encargado = Encargado.query.get(encargado_id)
+        if not encargado:
+            return jsonify({'error': 'Encargado no encontrado'}), 404
+
+        tipo_evaluacion_encargado = encargado.tipo_evaluacion
+        aspectos_necesarios = 9 if tipo_evaluacion_encargado == 1 else 8 if tipo_evaluacion_encargado == 2 else 0
+
 
         # Filtro base
         base_query = Evaluacion.query.filter(
@@ -273,9 +282,8 @@ def obtener_evaluaciones_completas_por_encargado():
         )
 
         # Filtro de periodo
+        from datetime import datetime, date, timedelta
         if periodo_tipo and periodo_valor:
-            from datetime import datetime, date, timedelta
-
             if periodo_tipo == 'week':
                 num_semana = int(periodo_valor)
                 current_year = datetime.now().year
@@ -305,51 +313,56 @@ def obtener_evaluaciones_completas_por_encargado():
         if not evaluaciones:
             return jsonify({'evaluaciones_completas': []}), 200
 
-        # Agrupación por empleado_id, fecha, tipo_evaluacion
         from collections import defaultdict
 
-        evaluaciones_agrupadas = defaultdict(list)
-
+        # Agrupar evaluaciones por empleado
+        evaluaciones_por_empleado = defaultdict(list)
         for eval in evaluaciones:
-            key = (eval.empleado_id, eval.fecha_evaluacion.strftime('%Y-%m-%d'), eval.tipo_evaluacion)
-            evaluaciones_agrupadas[key].append(eval)
+            evaluaciones_por_empleado[eval.empleado_id].append(eval)
 
-        # Cargar empleados
-        empleado_ids = {e.empleado_id for e in evaluaciones}
+        # Obtener empleados
+        empleado_ids = list(evaluaciones_por_empleado.keys())
         empleados = Empleado.query.filter(Empleado.id.in_(empleado_ids)).all()
         empleados_dict = {e.id: e for e in empleados}
 
         resultados = []
 
-        for (empleado_id, fecha_str, tipo_eval), registros in evaluaciones_agrupadas.items():
-            aspectos_necesarios = 9 if tipo_eval == 1 else 8 if tipo_eval == 2 else 0
-            completo = len(registros) == aspectos_necesarios
+        for empleado_id, evals in evaluaciones_por_empleado.items():
             empleado = empleados_dict.get(empleado_id)
+            if not empleado:
+                continue
 
-            if registros:
-                suma_porcentaje = sum(float(r.porcentaje_total) for r in registros)
-                divisor = 500  # Base total
-                calificacion_normalizada = (suma_porcentaje / divisor) * 100
-                calificacion_normalizada = min(calificacion_normalizada, 100.0)
-            else:
-                calificacion_normalizada = 0.0
+            # Agrupar por fecha
+            evaluaciones_por_fecha = defaultdict(list)
+            for eval in evals:
+                fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+                evaluaciones_por_fecha[fecha_str].append(eval)
 
-            resultados.append({
-                'empleado_id': empleado_id,
-                'nombre_empleado': empleado.nombre if empleado else 'Desconocido',
-                'tipo_evaluacion': tipo_eval,
-                'fecha_evaluacion': fecha_str,
-                'total_aspectos': len(registros),
-                'calificacion_promedio': round(calificacion_normalizada, 2),
-                'evaluacion_completa': completo,
-                'encargado_id': encargado_id
-            })
+            calificaciones_individuales = []
+
+            for fecha, registros in evaluaciones_por_fecha.items():
+                if len(registros) == aspectos_necesarios:
+                    suma = sum(float(r.porcentaje_total) for r in registros)
+                    calificacion = (suma / 500) * 100
+                    calificacion = min(calificacion, 100)
+                    calificaciones_individuales.append(calificacion)
+
+            if calificaciones_individuales:
+                promedio = sum(calificaciones_individuales) / len(calificaciones_individuales)
+                ultima_fecha = max(e.fecha_evaluacion for e in evals)
+
+                resultados.append({
+                    'empleado_id': empleado_id,
+                    'nombre_empleado': empleado.nombre,
+                    'calificacion_promedio': round(promedio, 2),
+                    'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d'),
+                    'encargado_id': encargado_id
+                })
 
         return jsonify({'evaluaciones_completas': resultados}), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 
 @evaluacion_bp.route('/evaluaciones', methods=['OPTIONS','GET'])
@@ -1562,6 +1575,9 @@ def obtener_evaluaciones_empleado(empleado_id):
     
 @evaluacion_bp.route('/evaluaciones-temporales', methods=['OPTIONS', 'POST'])
 def guardar_evaluacion_temporal():
+    if request.method == 'OPTIONS':
+        return '', 200  # Respuesta correcta al preflight
+    
     data = request.get_json(force=True)
 
     id_encargado = data.get('id_encargado')

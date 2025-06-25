@@ -1,6 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
-from app.models import Usuario, Encargado
+from app.models import Usuario, Encargado, EvaluacionTemporal
+from datetime import datetime
+import datetime as dt
+from app import db
 
 # Definición del Blueprint para las rutas de login
 login_bp = Blueprint('login_bp', __name__)
@@ -33,6 +36,20 @@ def login():
 
         # Si el encargado existe, obtenemos su ID y tipo_evaluacion, sino usamos null o un identificador especial
         id_encargado = encargado.id if encargado else None
+
+        # 👇 Lógica para eliminar evaluaciones temporales caducadas
+        if id_encargado:
+            semana_actual = datetime.now().isocalendar()[1]
+            semana_anterior = semana_actual - 1 if semana_actual > 1 else 52  # Manejo del caso de la semana 1
+
+            evaluaciones = EvaluacionTemporal.query.filter_by(id_encargado=id_encargado).all()
+
+            for eval in evaluaciones:
+                if eval.num_semana < semana_anterior:
+                    db.session.delete(eval)
+
+            db.session.commit()
+
         tipo_evaluacion = encargado.tipo_evaluacion if encargado else None
         
         # Guardar el ID del usuario en una variable separada
