@@ -94,7 +94,10 @@ def obtener_empleados_por_usuario(usuario_id):
 def obtener_empleados_por_encargado(encargado_id):
     try:
         # Consultar empleados asociados al encargado específico
-        empleados = Empleado.query.filter(Empleado.encargados.any(id=encargado_id)).all()
+        empleados = Empleado.query.filter(
+            Empleado.activo == True,  # Solo empleados activos
+            Empleado.encargados.any(id=encargado_id)
+            ).all()
 
         if not empleados:
             return jsonify([]), 200
