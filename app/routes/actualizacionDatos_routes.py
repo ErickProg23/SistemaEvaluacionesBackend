@@ -124,25 +124,25 @@ def editar_encargado(id):
     # Si 'encargados_ids' está en la solicitud
     if 'encargados_ids' in data:
         nuevos_encargados_ids = set(data['encargados_ids'])
-        encargados_actuales_ids = set(usuario.id for usuario in encargado.encargados)
+        encargados_actuales_ids = set(usuario.id for usuario in encargado.usuarios)
 
         # Encargados a eliminar (los que están asignados pero no están en los nuevos ids)
         encargados_a_eliminar = encargados_actuales_ids - nuevos_encargados_ids
-        for usuario in encargado.encargados:
+        for usuario in encargado.usuarios:
             if usuario.id in encargados_a_eliminar:
-                encargado.encargados.remove(usuario)
+                encargado.usuarios.remove(usuario)
 
         # Encargados a agregar (los que no están ya asignados)
         encargados_a_agregar = nuevos_encargados_ids - encargados_actuales_ids
-        encargados = Usuario.query.filter(Usuario.id.in_(encargados_a_agregar)).all()
+        usuarios_nuevos = Usuario.query.filter(Usuario.id.in_(encargados_a_agregar)).all()
 
         # Verificar que todos los encargados existen
-        if len(encargados) != len(encargados_a_agregar):
+        if len(usuarios_nuevos) != len(encargados_a_agregar):
             return jsonify({'error': 'Uno o más encargados no fueron encontrados'}), 404
 
         # Asignar los encargados al empleado
-        for usuario in encargados:
-            encargado.encargados.append(usuario)
+        for usuario in usuarios_nuevos:
+            encargado.usuarios.append(usuario)
 
     try:
         db.session.commit()
