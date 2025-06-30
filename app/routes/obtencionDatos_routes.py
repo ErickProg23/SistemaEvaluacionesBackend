@@ -215,6 +215,7 @@ def obtener_encargado(id):
             'puesto': encargado.puesto,
             'num_empleado': encargado.num_empleado,
             'activo': encargado.activo,
+            'tipo_evaluacion': encargado.tipo_evaluacion,
             'encargados': encargados_usuarios
         }
         return jsonify(encargado_data), 200
