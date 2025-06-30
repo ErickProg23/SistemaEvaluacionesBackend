@@ -1,5 +1,6 @@
+from datetime import datetime
 from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario
+from app.models import Empleado, Encargado, Notificacion, Usuario
 from app import db
 
 
@@ -9,15 +10,31 @@ act_bp = Blueprint('act_bp', __name__)
 
 
 @act_bp.route('/usuarios/empleados/desactivar/<int:id>', methods=['OPTIONS', 'PUT'])
-def deactivate_employee(id):    
+def deactivate_employee(id):  
+    if request.method == 'OPTIONS':
+        # Respuesta preflight CORS
+        return '', 200
+
+
     # Manejo del método PUT
     empleado = Empleado.query.get(id)
     if not empleado:
         return jsonify({'error': 'Empleado no encontrado'}), 404
     
-    empleado.activo = False
-    db.session.commit()
-    return jsonify({'message': 'Empleado desactivado correctamente'})
+    try:
+        empleado.activo = False
+
+        for encargado in list(empleado.encargados):
+            empleado.encargados.remove(encargado)
+
+
+        db.session.commit()
+
+        return jsonify({'message': 'Empleado desactivado correctamente'})
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @act_bp.route('/usuarios/encargados/desactivar/<int:id>', methods=['OPTIONS', 'PUT'])
 def deactivate_encargado(id):    
@@ -60,46 +77,70 @@ def editar_empleado(id):
     if request.content_type != 'application/json':
         return jsonify({'error': 'Tipo de contenido no soportado, se esperaba application/json'}), 415
     
-    empleado = Empleado.query.get(id)
 
-    if not empleado:
-        return jsonify({'error': 'Empleado no encontrado'}), 404
+    try:
+        empleado = Empleado.query.get(id)
 
-    # Manejo de la solicitud
-    data = request.json
-    empleado.nombre = data['nombre']
-    empleado.puesto = data['puesto']
-    empleado.num_empleado = data['num_empleado']
-    empleado.tipo_evaluacion = data['tipo_evaluacion']
+        if not empleado:
+            return jsonify({'error': 'Empleado no encontrado'}), 404
 
-    db.session.commit()
+        # Manejo de la solicitud
+        data = request.json
+        empleado.nombre = data['nombre']
+        empleado.puesto = data['puesto']
+        empleado.num_empleado = data['num_empleado']
+        empleado.tipo_evaluacion = data['tipo_evaluacion']
 
-    # Si 'encargados_ids' está en la solicitud
-    if 'encargados_ids' in data:
-        nuevos_encargados_ids = set(data['encargados_ids'])
-        encargados_actuales_ids = set(encargado.id for encargado in empleado.encargados)
+        db.session.commit()
 
-        # Encargados a eliminar (los que están asignados pero no están en los nuevos ids)
-        encargados_a_eliminar = encargados_actuales_ids - nuevos_encargados_ids
-        for encargado in empleado.encargados:
-            if encargado.id in encargados_a_eliminar:
-                empleado.encargados.remove(encargado)
+        # Si 'encargados_ids' está en la solicitud
+        if 'encargados_ids' in data:
+            nuevos_encargados_ids = set(data['encargados_ids'])
+            encargados_actuales_ids = set(encargado.id for encargado in empleado.encargados)
 
-        # Encargados a agregar (los que no están ya asignados)
-        encargados_a_agregar = nuevos_encargados_ids - encargados_actuales_ids
-        encargados = Encargado.query.filter(Encargado.id.in_(encargados_a_agregar)).all()
+            encargados_a_eliminar = encargados_actuales_ids - nuevos_encargados_ids
+            encargados_a_agregar = nuevos_encargados_ids - encargados_actuales_ids
 
-        # Verificar que todos los encargados existen
-        if len(encargados) != len(encargados_a_agregar):
-            return jsonify({'error': 'Uno o más encargados no fueron encontrados'}), 404
+            # Eliminar encargados
+            for encargado in list(empleado.encargados):
+                if encargado.id in encargados_a_eliminar:
+                    empleado.encargados.remove(encargado)
 
-        # Asignar los encargados al empleado
-        for encargado in encargados:
-            empleado.encargados.append(encargado)
+            # Agregar encargados nuevos
+            encargados = Encargado.query.filter(Encargado.id.in_(encargados_a_agregar)).all()
+            if len(encargados) != len(encargados_a_agregar):
+                return jsonify({'error': 'Uno o más encargados no fueron encontrados'}), 404
+            for encargado in encargados:
+                empleado.encargados.append(encargado)
 
-    db.session.commit()
+            # Crear notificaciones
+            fecha_actual = datetime.utcnow()
+            for id_baja in encargados_a_eliminar:
+                notificacion = Notificacion(
+                    id_encargado=id_baja,
+                    id_empleado=empleado.id,
+                    accion="2",
+                    fecha=fecha_actual
+                )
+                db.session.add(notificacion)
 
-    return jsonify({'message': 'Empleado editado correctamente'}), 200
+            for id_alta in encargados_a_agregar:
+                notificacion = Notificacion(
+                    id_encargado=id_alta,
+                    id_empleado=empleado.id,
+                    accion="1",
+                    fecha=fecha_actual
+                )
+                db.session.add(notificacion)
+
+            db.session.commit()
+            return jsonify({'message': 'Empleado editado correctamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+    
 
 
 @act_bp.route('/encargado/editar/<int:id>', methods =['PUT'])

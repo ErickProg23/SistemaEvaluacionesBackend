@@ -13,35 +13,41 @@ notis_bp = Blueprint('notis_bp', __name__)
 #----------------------------NOTIFICACIONES------------------------------------------------------
 @notis_bp.route('/notificaciones/nueva', methods=['OPTIONS', 'POST'])
 def nueva_notificacion():
-    # Obtener el payload de la solicitud
-
-     # 1. Verificar el tipo de solicitud
     if request.method == 'OPTIONS':
-        return '', 200  # Si es un preflight request para CORS
+        return '', 200
 
     try:
         data = request.get_json()
 
-        id_recibido = data.get('id')
-        nombre_recibido = data.get('nombre')
+        id_encargado = data.get('id_encargado')
+        nombre_recibido = data.get('nombre')  # opcional
         id_empleado = data.get('id_empleado')
         accion = data.get('accion')
         activo = data.get('activo')
 
-        if not id_recibido or not nombre_recibido:
-            return jsonify({'error': 'Se requieren los campos id y nombre'}), 400
+        if not id_encargado:
+            return jsonify({'error': 'Se requiere el campo id'}), 400
 
         fecha_actual = datetime.now()
 
-        # Primero buscar en tabla Encargado
-        encargado = Encargado.query.filter_by(id=id_recibido).first()
-        if encargado and encargado.nombre.strip().lower() == nombre_recibido.strip().lower():
+        # Buscar primero en Encargado por ID
+        encargado = Encargado.query.filter_by(id=id_encargado).first()
+
+        if encargado:
+            if nombre_recibido:
+                if encargado.nombre.strip().lower() != nombre_recibido.strip().lower():
+                    return jsonify({'error': 'Nombre no coincide con el encargado'}), 400
             id_encargado = encargado.id
         else:
-            # Si no coincide o no se encuentra, buscar en tabla Usuario
-            usuario = Usuario.query.filter_by(id=id_recibido).first()
-            if not usuario or usuario.nombre.strip().lower() != nombre_recibido.strip().lower():
-                return jsonify({'error': 'No se encontró un encargado o usuario con el id y nombre proporcionados'}), 404
+            # Buscar en Usuario por ID
+            usuario = Usuario.query.filter_by(id=id_encargado).first()
+            if not usuario:
+                return jsonify({'error': 'No se encontró encargado ni usuario con el ID proporcionado'}), 404
+
+            if nombre_recibido:
+                if usuario.nombre.strip().lower() != nombre_recibido.strip().lower():
+                    return jsonify({'error': 'Nombre no coincide con el usuario'}), 400
+
             id_encargado = usuario.id
 
         nueva_notificacion = Notificacion(
@@ -57,7 +63,7 @@ def nueva_notificacion():
 
     except Exception as e:
         db.session.rollback()
-        print(f"Error al crear la notificacion: {e}")
+        print(f"Error al crear la notificación: {e}")
         return jsonify({'error': str(e)}), 500
 
 # -------------------------------ELIMINAR NOTIFICACIONES-------------------------------------
