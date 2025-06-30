@@ -278,7 +278,6 @@ def obtener_evaluaciones_completas_por_encargado():
         # Filtro base
         base_query = Evaluacion.query.filter(
             Evaluacion.encargado_id == encargado_id,
-            Evaluacion.ausente == 0
         )
 
         # Filtro de periodo
