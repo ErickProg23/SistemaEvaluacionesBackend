@@ -281,32 +281,38 @@ def obtener_evaluaciones_completas_por_encargado():
         )
 
         # Filtro de periodo
-        from datetime import datetime, date, timedelta
         if periodo_tipo and periodo_valor:
             if periodo_tipo == 'week':
                 num_semana = int(periodo_valor)
-                current_year = datetime.now().year
-                fecha_inicio = datetime.strptime(f'{current_year}-W{num_semana}-1', "%Y-W%W-%w").date()
-                fecha_fin = fecha_inicio + timedelta(days=6)
+                base_query = base_query.filter(Evaluacion.num_semana == num_semana)
+
             elif periodo_tipo == 'month':
+                from datetime import datetime, date, timedelta
+
                 if '-' in periodo_valor:
                     year, month = map(int, periodo_valor.split('-'))
                 else:
                     year = datetime.now().year
                     month = int(periodo_valor)
+
                 fecha_inicio = date(year, month, 1)
                 fecha_fin = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year, 12, 31)
+
+                base_query = base_query.filter(
+                    Evaluacion.fecha_evaluacion >= fecha_inicio,
+                    Evaluacion.fecha_evaluacion <= fecha_fin
+                )
             elif periodo_tipo == 'year':
                 year = int(periodo_valor)
                 fecha_inicio = date(year, 1, 1)
                 fecha_fin = date(year, 12, 31)
+
+                base_query = base_query.filter(
+                    Evaluacion.fecha_evaluacion >= fecha_inicio,
+                    Evaluacion.fecha_evaluacion <= fecha_fin
+                )
             else:
                 return jsonify({'error': 'periodo_tipo inválido'}), 400
-
-            base_query = base_query.filter(
-                Evaluacion.fecha_evaluacion >= fecha_inicio,
-                Evaluacion.fecha_evaluacion <= fecha_fin
-            )
 
         evaluaciones = base_query.all()
         if not evaluaciones:
