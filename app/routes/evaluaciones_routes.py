@@ -1758,6 +1758,8 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
                     evaluaciones_atrasadas.append({
                         "id_encargado": encargado.id,
                         "nombre_encargado": encargado.nombre,
+                        "num_empleado": encargado.num_empleado,
+                        "puesto": encargado.puesto,
                         "numero_semana": semana
                     })
 
