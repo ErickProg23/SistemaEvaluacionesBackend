@@ -1656,6 +1656,9 @@ def buscar_evaluaciones_temporales():
 
 @evaluacion_bp.route('/eliminar/evaluacion-temporal', methods=['OPTIONS', 'POST'])
 def eliminar_evaluacion_temporal():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     data = request.get_json(force=True)
 
     id_encargado = data.get('id_encargado')
