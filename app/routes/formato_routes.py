@@ -1,5 +1,12 @@
-from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario
+from datetime import datetime
+from io import BytesIO
+import os
+from reportlab.pdfgen import canvas
+from PyPDF2 import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter
+from flask import Blueprint, make_response, render_template, request, jsonify, send_file, send_from_directory
+from app.models import Empleado, Encargado, Formato, Usuario
+from weasyprint import HTML, CSS
 
 
 # Definición del Blueprint para las rutas de obtención de datos
@@ -52,3 +59,56 @@ def download_formato(formato_id):
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@formato_bp.route('/medida-disciplinaria/pdf', methods=['GET'])
+def generar_pdf_medida_disciplinaria():
+    ruta_pdf = r'C:\Users\Soporte\Documents\SistemaEvaluaciones_BACK\uploads\formatos\Medida disciplinaria.pdf'
+
+    import os
+    if not os.path.exists(ruta_pdf):
+        return f"Archivo no encontrado: {ruta_pdf}", 404
+
+    return send_file(ruta_pdf, mimetype='application/pdf')
+
+@formato_bp.route('/medida-disciplinaria/pdf/imprimir', methods=['GET'])
+def imprimir_pdf_medida_disciplinaria():
+    nombre = request.args.get('nombre_empleado', None)
+    num_emp = request.args.get('num_empleado', None)
+    puesto = request.args.get('puesto', None)
+    departamento = request.args.get('departamento', None)
+    fecha = datetime.now().strftime('%d/%m/%Y')
+
+    puestos_a_departamentos = {
+        'Administrador': 'Administrativo',
+        'Chef ejecutivo': 'Cocina',
+        'Ama de llaves': 'Dirección',
+        'AyB': 'Producción',
+        'Jefe de recepcion': 'Recepción',
+        'Seguridad y bienestar': 'Seguridad',
+        'Director de Capital Humano': 'Capital Humano',
+        'Ventas': 'Ventas',
+        'Mantenimiento': 'Mantenimiento',
+        # Más...
+    }
+
+    if not departamento or departamento.lower() in ['undefined', 'null', 'none', '']:
+        departamento = puestos_a_departamentos.get(puesto, 'Departamento Desconocido')
+
+    # Renderizar HTML con Jinja2
+    html_out = render_template('Medida disciplinaria.html',
+                               nombre_empleado=nombre,
+                               num_empleado=num_emp,
+                               puesto=puesto,
+                               departamento=departamento,
+                               fecha=fecha)
+
+    # Convertir HTML a PDF con WeasyPrint
+    pdf = HTML(string=html_out).write_pdf()
+
+    # Crear respuesta PDF
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    # inline para abrir en navegador, attachment para forzar descarga
+    response.headers['Content-Disposition'] = 'inline; filename=medida_disciplinaria.pdf'
+
+    return response

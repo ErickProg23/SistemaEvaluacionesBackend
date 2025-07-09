@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medida Disciplinaria</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.4;
+            font-size: 12px;
+        }
+        
+        .header {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 30px;
+        }
+        
+        .field {
+            margin-bottom: 15px;
+        }
+        
+        .field-inline {
+            display: inline-block;
+            margin-right: 30px;
+        }
+        
+        .underline {
+            border-bottom: 1px solid #000;
+            display: inline-block;
+            min-width: 200px;
+            margin-left: 5px;
+        }
+        
+        .long-underline {
+            border-bottom: 1px solid #000;
+            display: inline-block;
+            width: 100%;
+            margin-left: 5px;
+        }
+        
+        .description-box {
+            border: 1px solid #000;
+            padding: 10px;
+            margin: 10px 0;
+            min-height: 80px;
+        }
+        
+        .checkbox-section {
+            margin: 20px 0;
+        }
+        
+        .checkbox-line {
+            margin-bottom: 15px;
+        }
+        
+        .signature-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .signature-line {
+            border-bottom: 1px solid #000;
+            width: 300px;
+            margin: 20px auto;
+            height: 40px;
+        }
+        
+        .suspension-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        
+        .suspension-table td {
+            border: 1px solid #000;
+            padding: 8px;
+            text-align: center;
+        }
+        
+        @media print {
+            body {
+                margin: 0;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        MEDIDA DISCIPLINARIA
+    </div>
+    
+    <div class="field" style="text-align: right;">
+      Fecha: <span class="underline" style="display: inline-block; min-width: auto;">{{ fecha }}</span>
+    </div>
+
+
+    
+    <div class="field">
+        Empresa: <strong>VISION HOTELERA DE SONORA SA DE CV</strong>
+    </div>
+    
+    <div class="field">
+        Nombre del empleado: <span class="long-underline">{{ nombre_empleado }}</span>
+    </div>
+     
+    <div class="field">
+        <span class="field-inline">No. Empleado: <span class="underline">{{ num_empleado }}</span></span>
+        <span class="field-inline">Puesto: <span class="underline">{{ puesto }}</span></span>
+        <span class="field-inline">Departamento: <span class="underline">{{ departamento }}</span></span>
+    </div>
+    
+    <div class="field">
+        <strong>Descripción de la situación para la que se aplica la medida disciplinaria</strong>
+    </div>
+    
+    <div class="description-box">
+        El colaborador(a) ha incurrido en una falta al no cumplir con la elaboración y entrega oportuna de las evaluaciones de desempeño correspondientes al personal bajo su supervisión, dentro del plazo establecido por la organización. Esta omisión afecta directamente los procesos de retroalimentación, desarrollo profesional, y toma de decisiones en materia de promociones, capacitación y cumplimiento de metas institucionales.
+    </div>
+    
+    <div class="signature-section">
+        <div class="signature-line"></div>
+        <div><strong>FIRMA DEL EMPLEADO</strong></div>
+        <div>De reconocidos los hechos arriba descritos.</div>
+    </div>
+    
+    <div class="checkbox-section">
+        <div><strong>Medida disciplinaria aplicable marque con (X)</strong></div>
+        <br>
+        <div class="checkbox-line">
+            Amonestación verbal: ☐ &nbsp;&nbsp;&nbsp;&nbsp;
+            Amonestación por Escrito: ☐ &nbsp;&nbsp;&nbsp;&nbsp;
+            Suspensión: ☐
+        </div>
+        <div class="checkbox-line">
+            Otro: <span class="long-underline"></span>
+        </div>
+    </div>
+    
+    <div class="field">
+        <strong>En caso de marcar "Suspensión", indique la cantidad de días y fecha aplicable</strong>
+    </div>
+    
+    <table class="suspension-table">
+        <tr>
+            <td><strong>Del</strong></td>
+            <td><strong>Al</strong></td>
+            <td><strong>Total de días</strong></td>
+        </tr>
+        <tr>
+            <td>&nbsp;<br>&nbsp;</td>
+            <td>&nbsp;<br>&nbsp;</td>
+            <td>&nbsp;<br>&nbsp;</td>
+        </tr>
+    </table>
+    
+    <div class="signature-section">
+        <div class="signature-line"></div>
+        <div><strong>FIRMA DEL EMPLEADO</strong></div>
+        <div>de enterado de Medida Disciplinaria</div>
+    </div>
+</body>
+</html>

@@ -1656,6 +1656,9 @@ def buscar_evaluaciones_temporales():
 
 @evaluacion_bp.route('/eliminar/evaluacion-temporal', methods=['OPTIONS', 'POST'])
 def eliminar_evaluacion_temporal():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     data = request.get_json(force=True)
 
     id_encargado = data.get('id_encargado')
@@ -1713,4 +1716,58 @@ def buscar_evaluacion_existente():
         return jsonify({'error': 'Error en el servidor'}), 500
 
 
-    
+@evaluacion_bp.route('/atrasadas-todos/<int:usuario_id>', methods=['OPTIONS', 'GET'])
+def get_evaluaciones_atrasadas_todos(usuario_id):
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        # 1. Verificar si el usuario tiene rol 5 (Capital Humano)
+        usuario = Usuario.query.filter_by(id=usuario_id).first()
+        if not usuario or usuario.rol_id != 5:
+            return jsonify({'error': 'No autorizado'}), 403
+
+        # 2. Calcular semana actual personalizada
+        def get_current_week():
+            start_date = date(2024, 12, 23)
+            today = date.today()
+            diff_days = (today - start_date).days
+            current_week = (diff_days // 7) + 1
+            return max(0, current_week - 1)
+
+
+        SEMANA_INICIO_REAL= 27
+        semana_actual = get_current_week()
+        semanas_a_verificar = [semana_actual - i for i in range(1, 4)]
+        semanas_a_verificar = [sem for sem in semanas_a_verificar if sem >= SEMANA_INICIO_REAL]
+
+        if not semanas_a_verificar:
+            return jsonify({'mensaje': 'Aún no hay semanas válidas para evaluar atrasos.'}), 200
+
+
+        # 3. Obtener todos los encargados
+        encargados = Encargado.query.all()
+
+        evaluaciones_atrasadas = []
+
+        for encargado in encargados:
+            for semana in semanas_a_verificar:
+                evaluacion = Evaluacion.query.filter_by(
+                    encargado_id=encargado.id,
+                    num_semana=semana
+                ).first()
+
+                if not evaluacion:
+                    evaluaciones_atrasadas.append({
+                        "id_encargado": encargado.id,
+                        "nombre_encargado": encargado.nombre,
+                        "num_empleado": encargado.num_empleado,
+                        "puesto": encargado.puesto,
+                        "numero_semana": semana
+                    })
+
+        return jsonify(evaluaciones_atrasadas)
+
+    except Exception as e:
+        logging.error(f"Error al obtener evaluaciones atrasadas: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno del servidor'}), 500
