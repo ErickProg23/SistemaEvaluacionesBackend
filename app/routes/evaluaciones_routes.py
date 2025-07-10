@@ -1,7 +1,7 @@
 from flask import Blueprint, make_response, request, jsonify
 import pytz
 from sqlalchemy import Integer, case, cast, extract, func
-from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal
+from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal, EvaluacionAtrasada
 from app import db
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -1724,7 +1724,7 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
     try:
         # 1. Verificar si el usuario tiene rol 5 (Capital Humano)
         usuario = Usuario.query.filter_by(id=usuario_id).first()
-        if not usuario or usuario.rol_id != 5:
+        if not usuario or usuario.rol_id not in [1, 5]:
             return jsonify({'error': 'No autorizado'}), 403
 
         # 2. Calcular semana actual personalizada
@@ -1771,3 +1771,30 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
     except Exception as e:
         logging.error(f"Error al obtener evaluaciones atrasadas: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor'}), 500
+
+@evaluacion_bp.route('/evaluaciones-tardias/liberar', methods=['POST'])
+def liberar_evaluacion_tardia():
+    try:
+        data = request.get_json()
+
+        id_encargado = data.get('id_encargado')
+        num_semana = data.get('num_semana')
+        activo = data.get('activo', True)
+
+        if id_encargado is None or num_semana is None:
+            return jsonify({"error": "Datos incompletos"}), 400
+
+        nueva_evaluacion = EvaluacionAtrasada(
+            id_encargado=id_encargado,
+            num_semana=num_semana,
+            activo=activo
+        )
+
+        db.session.add(nueva_evaluacion)
+        db.session.commit()
+
+        return jsonify({"mensaje": "Evaluación atrasada registrada correctamente"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500

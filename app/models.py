@@ -217,5 +217,14 @@ class EvaluacionTemporal(db.Model):
     def __repr__(self):
         return f'<EvaluacionTemporal ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
     
+class EvaluacionAtrasada(db.Model):
+    __tablename__ = 'evaluaciones_atrasadas'
 
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
+    num_semana = db.Column(db.Integer, nullable=False)
+    activo = db.Column(db.Boolean, default=True)
+
+    def __repr__(self):
+        return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
     

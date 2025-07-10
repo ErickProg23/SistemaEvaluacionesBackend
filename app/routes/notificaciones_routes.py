@@ -193,3 +193,39 @@ def eliminar_todas_notificaciones():
         db.session.rollback()
         print(f"Error desactivando notificaciones: {str(e)}")
         return jsonify({"error": "Error al desactivar notificaciones"}), 500
+
+@notis_bp.route('/nueva/atrasada', methods=['OPTIONS', 'POST'])
+def nueva_notificacion_atrasada():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+
+    try:
+        data = request.get_json()
+
+        id_encargado = data.get('id_encargado')
+        accion = data.get('accion')
+        activo = data.get('activo')
+
+        if not id_encargado:
+            return jsonify({'error': 'Se requiere el campo id'}), 400
+
+        fecha_actual = datetime.now()
+
+        nueva_notificacion = Notificacion(
+            id_encargado=id_encargado,
+            accion=accion,
+            fecha=fecha_actual
+        )
+        db.session.add(nueva_notificacion)
+        db.session.commit()
+
+        return jsonify({'message': 'Notificación creada correctamente'}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al crear la notificación: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+    
