@@ -227,4 +227,34 @@ class EvaluacionAtrasada(db.Model):
 
     def __repr__(self):
         return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
+
+class Ticket(db.Model):
+    __tablename__ = 'ticket'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    titulo = db.Column(db.String(45), nullable=False)
+    descripcion = db.Column(db.Text, nullable=False)
+    tipo_ticket = db.Column(db.Integer,db.ForeignKey('tipo_ticket.id'), nullable=False)
+    estado = db.Column(db.String(45), nullable=False, default='Abierto')  # Estado del ticket, por defecto 'Abierto'
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    asignado_a = db.Column(db.Integer,db.ForeignKey('usuarios.id'), nullable=False)
+    fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
+    fecha_cierre = db.Column(db.DateTime)
+
+    tipo_ticket_rel = db.relationship('TipoTicket', backref='tickets')
+    usuario_rel = db.relationship('Usuario', foreign_keys=[usuario_id], backref='tickets_creados')
+    asignado_rel = db.relationship('Usuario', foreign_keys=[asignado_a], backref='tickets_asignados')
+
+
+    def __repr__(self):
+        return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}, Asignado a: {self.asignado_a}>'
+
+class TipoTicket(db.Model):
+    __tablename__ = 'tipo_ticket'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nombre = db.Column(db.String(45), nullable=False)
+
+    def __repr__(self):
+        return f'<TipoTicket ID: {self.id}, Nombre: {self.nombre}>'
     

@@ -35,6 +35,7 @@ def create_app():
         from .routes.notificaciones_routes import notis_bp
         from .routes.formato_routes import formato_bp
         from .routes.promedio_routes import prom_bp
+        from .routes.ticket_routes import tickets_bp
         from .main_routes import routes_blueprint  # Importar el Blueprint definido en routes.py
 
 
@@ -49,6 +50,7 @@ def create_app():
         app.register_blueprint(notis_bp, url_prefix='/api/notificaciones')  # Registrar el Blueprint de notificaciones
         app.register_blueprint(formato_bp, url_prefix='/api/formatos')  # Registrar el Blueprint de formatos
         app.register_blueprint(prom_bp, url_prefix='/api/promedio')
+        app.register_blueprint(tickets_bp, url_prefix='/api/tickets')  # Registrar el Blueprint principal
         app.register_blueprint(routes_blueprint, url_prefix='/api')
     
     return app
