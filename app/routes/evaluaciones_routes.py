@@ -1,7 +1,7 @@
 from flask import Blueprint, make_response, request, jsonify
 import pytz
 from sqlalchemy import Integer, case, cast, extract, func
-from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal
+from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado, Pregunta, EvaluacionTemporal, EvaluacionAtrasada
 from app import db
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -1724,7 +1724,7 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
     try:
         # 1. Verificar si el usuario tiene rol 5 (Capital Humano)
         usuario = Usuario.query.filter_by(id=usuario_id).first()
-        if not usuario or usuario.rol_id != 5:
+        if not usuario or usuario.rol_id not in [1, 5]:
             return jsonify({'error': 'No autorizado'}), 403
 
         # 2. Calcular semana actual personalizada
@@ -1771,3 +1771,110 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
     except Exception as e:
         logging.error(f"Error al obtener evaluaciones atrasadas: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor'}), 500
+
+@evaluacion_bp.route('/evaluaciones-tardias/liberar', methods=['POST'])
+def liberar_evaluacion_tardia():
+    try:
+        data = request.get_json()
+
+        id_encargado = data.get('id_encargado')
+        num_semana = data.get('num_semana')
+        activo = data.get('activo', True)
+
+        if id_encargado is None or num_semana is None:
+            return jsonify({"error": "Datos incompletos"}), 400
+
+        # 🔍 Verificar si ya existe una evaluación para ese encargado y semana
+        evaluacion_existente = EvaluacionAtrasada.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if evaluacion_existente:
+            return jsonify({"mensaje": "Ya existe una evaluación atrasada para este encargado y semana"}), 200
+
+        nueva_evaluacion = EvaluacionAtrasada(
+            id_encargado=id_encargado,
+            num_semana=num_semana,
+            activo=activo
+        )
+
+        db.session.add(nueva_evaluacion)
+        db.session.commit()
+
+        return jsonify({"mensaje": "Evaluación atrasada registrada correctamente"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@evaluacion_bp.route('/evaluaciones-tardias/encargado/finalizada', methods=['OPTIONS', 'POST'])
+def finalizar_evaluacion_atrasda_delEncargado():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+
+        id_encargado = data.get('id_encargado')
+        num_semana = data.get('num_semana')
+
+        if id_encargado is None or num_semana is None:
+            return jsonify({"error": "Datos incompletos"}), 400
+
+        # Buscar la evaluación atrasada
+        evaluacion_atrasada = EvaluacionAtrasada.query.filter_by(
+            id_encargado=id_encargado,
+            num_semana=num_semana
+        ).first()
+
+        if not evaluacion_atrasada:
+            return jsonify({"error": "Evaluación atrasada no encontrada"}), 404
+
+        # Marcar como finalizada
+        evaluacion_atrasada.activo = False
+        db.session.commit()
+
+        return jsonify({"mensaje": "Evaluación atrasada finalizada correctamente"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al finalizar evaluación atrasada: {str(e)}")
+        return jsonify({"error": "Error interno del servidor"}), 500
+
+
+@evaluacion_bp.route('/evaluaciones-tardias/encargado/<int:encargado_id>', methods=['OPTIONS', 'GET'])
+def obtener_evaluaciones_tardias_encargado(encargado_id):
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        encargado = Encargado.query.get(encargado_id)
+
+        if not encargado:
+            return jsonify({'error': 'Encargado no encontrado'}), 404
+        
+        # Obtener las evaluaciones atrasadas del encargado
+        evaluaciones_tardias = EvaluacionAtrasada.query.filter_by(id_encargado=encargado_id).all()
+        if not evaluaciones_tardias:
+            return jsonify({'mensaje': 'No hay evaluaciones atrasadas para este encargado'}), 404
+        
+        # Formatear la respuesta
+        response_data = []
+        for evaluacion in evaluaciones_tardias:
+            response_data.append({
+                'id': evaluacion.id,
+                'id_encargado': evaluacion.id_encargado,
+                'num_semana': evaluacion.num_semana,
+                'activo': evaluacion.activo
+            })
+
+        return jsonify({
+            'encargado_id': encargado.id,
+            'encargado_nombre': encargado.nombre,
+            'evaluaciones_tardias': response_data
+        }), 200 
+    except Exception as e:
+        print(f"Error al obtener evaluaciones tardías: {str(e)}")
+        return jsonify({'error': 'Error interno del servidor'}), 500
+

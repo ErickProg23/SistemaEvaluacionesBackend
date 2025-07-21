@@ -46,19 +46,31 @@ def obtener_formatos():
         return jsonify({'error': str(e)}), 500
 
 # ---------------------------------------------- DESCARGAR FORMATO ----------------------------------------------------------
-@formato_bp.route('/formatos/download/<int:formato_id>', methods=['GET'])
+
+@formato_bp.route('/download/<int:formato_id>', methods=['GET'])
 def download_formato(formato_id):
     try:
         formato = Formato.query.get(formato_id)
         if not formato:
             return jsonify({'error': 'Formato no encontrado'}), 404
 
-        carpeta_formatos = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'uploads', 'formatos')
-        filename = os.path.basename(formato.archivo_url)  # Esto evita rutas raras
+        # Subes 2 niveles hasta llegar a la raíz del proyecto
+        BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        carpeta_formatos = os.path.join(BASE_DIR, 'uploads', 'formatos')
+        filename = os.path.basename(formato.archivo_url)
+        ruta_completa = os.path.abspath(os.path.join(carpeta_formatos, filename))
+
+        print('Ruta completa del archivo:', ruta_completa)
+
+        if not os.path.exists(ruta_completa):
+            return jsonify({'error': f'Archivo físico no encontrado en: {ruta_completa}'}), 404
+
         return send_from_directory(carpeta_formatos, filename, as_attachment=True)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 @formato_bp.route('/medida-disciplinaria/pdf', methods=['GET'])
 def generar_pdf_medida_disciplinaria():
