@@ -240,6 +240,7 @@ class Ticket(db.Model):
     asignado_a = db.Column(db.Integer,db.ForeignKey('usuarios.id'), nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_cierre = db.Column(db.DateTime)
+    imagen = db.Column(db.String(255), nullable=True)  # Ruta de la imagen, si aplica
 
     tipo_ticket_rel = db.relationship('TipoTicket', backref='tickets')
     usuario_rel = db.relationship('Usuario', foreign_keys=[usuario_id], backref='tickets_creados')

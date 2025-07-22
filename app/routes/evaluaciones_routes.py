@@ -1738,8 +1738,8 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
 
         SEMANA_INICIO_REAL= 27
         semana_actual = get_current_week()
-        semanas_a_verificar = [semana_actual - i for i in range(1, 4)]
-        semanas_a_verificar = [sem for sem in semanas_a_verificar if sem >= SEMANA_INICIO_REAL]
+        # En lugar de restar las últimas 3 semanas, haz un rango desde la 30 hasta la actual - 1
+        semanas_a_verificar = list(range(SEMANA_INICIO_REAL, semana_actual))
 
         if not semanas_a_verificar:
             return jsonify({'mensaje': 'Aún no hay semanas válidas para evaluar atrasos.'}), 200
