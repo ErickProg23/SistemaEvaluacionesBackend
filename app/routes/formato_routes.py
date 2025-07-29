@@ -91,14 +91,14 @@ def imprimir_pdf_medida_disciplinaria():
     fecha = datetime.now().strftime('%d/%m/%Y')
 
     puestos_a_departamentos = {
-        'Administrador': 'Administracion',
-        'Chef ejecutivo': 'Alimentos y bebidas',
-        'Ama de llaves': 'Division Cuartos',
-        'AyB': 'Alimentos y bebidas',
-        'Jefe de recepcion': 'Division Cuartos',
-        'Seguridad y bienestar': 'Administracion',
-        'Director de Capital Humano': 'Recursos Humanos',
-        'Ventas': 'Mercadotecnia y Ventas',
+        'Administrador': 'Administrativo',
+        'Chef ejecutivo': 'Cocina',
+        'Ama de llaves': 'Dirección',
+        'AyB': 'Producción',
+        'Jefe de recepcion': 'Recepción',
+        'Seguridad y bienestar': 'Seguridad',
+        'Director de Capital Humano': 'Capital Humano',
+        'Ventas': 'Ventas',
         'Mantenimiento': 'Mantenimiento',
         # Más...
     }

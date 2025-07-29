@@ -333,6 +333,8 @@ def obtener_evaluaciones_completas_por_encargado():
         resultados = []
 
         for empleado_id, evals in evaluaciones_por_empleado.items():
+            evals = [e for e in evals if not e.ausente]
+            total_ausentes = sum(1 for e in evaluaciones_por_empleado[empleado_id] if e.ausente)
             empleado = empleados_dict.get(empleado_id)
             if not empleado:
                 continue
@@ -361,7 +363,8 @@ def obtener_evaluaciones_completas_por_encargado():
                     'nombre_empleado': empleado.nombre,
                     'calificacion_promedio': round(promedio, 2),
                     'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d'),
-                    'encargado_id': encargado_id
+                    'encargado_id': encargado_id,
+                    'ausencias': total_ausentes
                 })
 
         return jsonify({'evaluaciones_completas': resultados}), 200
@@ -1476,10 +1479,6 @@ def obtener_evaluaciones_empleado(empleado_id):
                 'evaluaciones': []
             }), 200
         
-        # Determinar el número de aspectos según el tipo de evaluación
-        num_aspectos_esperados = 9 if tipo_evaluacion == 1 else 8
-        divisor_calificacion = 500 if tipo_evaluacion == 1 else 500
-        
         # Agrupar evaluaciones por fecha y encargado
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
@@ -1738,8 +1737,8 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
 
         SEMANA_INICIO_REAL= 27
         semana_actual = get_current_week()
-        semanas_a_verificar = [semana_actual - i for i in range(1, 4)]
-        semanas_a_verificar = [sem for sem in semanas_a_verificar if sem >= SEMANA_INICIO_REAL]
+        # En lugar de restar las últimas 3 semanas, haz un rango desde la 30 hasta la actual - 1
+        semanas_a_verificar = list(range(SEMANA_INICIO_REAL, semana_actual))
 
         if not semanas_a_verificar:
             return jsonify({'mensaje': 'Aún no hay semanas válidas para evaluar atrasos.'}), 200
