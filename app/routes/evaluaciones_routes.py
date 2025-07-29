@@ -333,6 +333,8 @@ def obtener_evaluaciones_completas_por_encargado():
         resultados = []
 
         for empleado_id, evals in evaluaciones_por_empleado.items():
+            evals = [e for e in evals if not e.ausente]
+            total_ausentes = sum(1 for e in evaluaciones_por_empleado[empleado_id] if e.ausente)
             empleado = empleados_dict.get(empleado_id)
             if not empleado:
                 continue
@@ -361,7 +363,8 @@ def obtener_evaluaciones_completas_por_encargado():
                     'nombre_empleado': empleado.nombre,
                     'calificacion_promedio': round(promedio, 2),
                     'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d'),
-                    'encargado_id': encargado_id
+                    'encargado_id': encargado_id,
+                    'ausencias': total_ausentes
                 })
 
         return jsonify({'evaluaciones_completas': resultados}), 200
@@ -1475,10 +1478,6 @@ def obtener_evaluaciones_empleado(empleado_id):
                 'message': 'No hay evaluaciones para este empleado en el período seleccionado',
                 'evaluaciones': []
             }), 200
-        
-        # Determinar el número de aspectos según el tipo de evaluación
-        num_aspectos_esperados = 9 if tipo_evaluacion == 1 else 8
-        divisor_calificacion = 500 if tipo_evaluacion == 1 else 500
         
         # Agrupar evaluaciones por fecha y encargado
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
