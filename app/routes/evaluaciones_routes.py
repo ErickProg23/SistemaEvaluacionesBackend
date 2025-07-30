@@ -333,15 +333,17 @@ def obtener_evaluaciones_completas_por_encargado():
         resultados = []
 
         for empleado_id, evals in evaluaciones_por_empleado.items():
-            evals = [e for e in evals if not e.ausente]
-            total_ausentes = sum(1 for e in evaluaciones_por_empleado[empleado_id] if e.ausente)
+            todas = evaluaciones_por_empleado[empleado_id]  # todas, incluyendo ausentes
+            solo_validas = [e for e in todas if not e.ausente]  # solo no ausentes
+
+            total_ausentes = sum(1 for e in todas if e.ausente)
             empleado = empleados_dict.get(empleado_id)
             if not empleado:
                 continue
 
-            # Agrupar por fecha
+            # Agrupar evaluaciones no ausentes por fecha
             evaluaciones_por_fecha = defaultdict(list)
-            for eval in evals:
+            for eval in solo_validas:
                 fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
                 evaluaciones_por_fecha[fecha_str].append(eval)
 
@@ -354,18 +356,19 @@ def obtener_evaluaciones_completas_por_encargado():
                     calificacion = min(calificacion, 100)
                     calificaciones_individuales.append(calificacion)
 
-            if calificaciones_individuales:
-                promedio = sum(calificaciones_individuales) / len(calificaciones_individuales)
-                ultima_fecha = max(e.fecha_evaluacion for e in evals)
+            promedio = round(sum(calificaciones_individuales) / len(calificaciones_individuales), 2) if calificaciones_individuales else None
+            ultima_fecha = max(e.fecha_evaluacion for e in solo_validas) if solo_validas else None
 
-                resultados.append({
-                    'empleado_id': empleado_id,
-                    'nombre_empleado': empleado.nombre,
-                    'calificacion_promedio': round(promedio, 2),
-                    'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d'),
-                    'encargado_id': encargado_id,
-                    'ausencias': total_ausentes
-                })
+            resultados.append({
+                'empleado_id': empleado_id,
+                'nombre_empleado': empleado.nombre,
+                'calificacion_promedio': promedio,
+                'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d') if ultima_fecha else None,
+                'encargado_id': encargado_id,
+                'ausencias': total_ausentes,
+                'sin_evaluaciones_validas': len(solo_validas) == 0  # útil para mostrar o marcar en el front
+            })
+
 
         return jsonify({'evaluaciones_completas': resultados}), 200
 
