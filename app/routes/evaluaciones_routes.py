@@ -384,24 +384,20 @@ def obtener_evaluaciones():
         return jsonify({'error': 'Se requiere ID de encargado'}), 400
 
     try:
-        # 1. Obtener la fecha de la evaluación más reciente para cada empleado
-        subquery = db.session.query(
-            Evaluacion.empleado_id,
-            db.func.max(Evaluacion.fecha_evaluacion).label('fecha_reciente')
+        # 1. Obtener la fecha más reciente GLOBAL de todas las evaluaciones del encargado
+        fecha_mas_reciente = db.session.query(
+            db.func.max(Evaluacion.fecha_evaluacion)
         ).filter(
             Evaluacion.encargado_id == encargado_id
-        ).group_by(
-            Evaluacion.empleado_id
-        ).subquery()
+        ).scalar()
+        
+        if not fecha_mas_reciente:
+            return jsonify({'error': 'No hay evaluaciones'}), 404
 
-        # 2. Obtener TODAS las evaluaciones más recientes para cada empleado
-        evaluaciones = db.session.query(Evaluacion).join(
-            subquery,
-            db.and_(
-                Evaluacion.empleado_id == subquery.c.empleado_id,
-                Evaluacion.fecha_evaluacion == subquery.c.fecha_reciente,
-                Evaluacion.encargado_id == encargado_id
-            )
+        # 2. Obtener TODAS las evaluaciones de la fecha más reciente
+        evaluaciones = db.session.query(Evaluacion).filter(
+            Evaluacion.encargado_id == encargado_id,
+            Evaluacion.fecha_evaluacion == fecha_mas_reciente
         ).all()
 
         if not evaluaciones:
@@ -455,7 +451,6 @@ def obtener_evaluaciones():
                 if evals_presentes:
                     tipo_eval = evals_presentes[0].tipo_evaluacion
                     total_aspectos_requeridos = 9 if tipo_eval == 1 else 8
-
 
                     if len(evals_presentes) == total_aspectos_requeridos:
                         resultados[empleado_id]['total_evaluaciones_completas'] += 1
@@ -1738,7 +1733,7 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
             return max(0, current_week - 1)
 
 
-        SEMANA_INICIO_REAL= 27
+        SEMANA_INICIO_REAL= 30
         semana_actual = get_current_week()
         # En lugar de restar las últimas 3 semanas, haz un rango desde la 30 hasta la actual - 1
         semanas_a_verificar = list(range(SEMANA_INICIO_REAL, semana_actual))
