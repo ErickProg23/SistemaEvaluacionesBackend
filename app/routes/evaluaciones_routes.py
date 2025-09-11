@@ -1742,12 +1742,16 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
             return jsonify({'mensaje': 'Aún no hay semanas válidas para evaluar atrasos.'}), 200
 
 
-        # 3. Obtener todos los encargados
-        encargados = Encargado.query.all()
+        # 3. Obtener solo los encargados que tienen al menos un empleado asignado
+        from app.models import EmpleadoEncargado
+        
+        encargados_con_empleados = db.session.query(Encargado).join(
+            EmpleadoEncargado, Encargado.id == EmpleadoEncargado.encargado_id
+        ).distinct().all()
 
         evaluaciones_atrasadas = []
 
-        for encargado in encargados:
+        for encargado in encargados_con_empleados:
             for semana in semanas_a_verificar:
                 evaluacion = Evaluacion.query.filter_by(
                     encargado_id=encargado.id,
