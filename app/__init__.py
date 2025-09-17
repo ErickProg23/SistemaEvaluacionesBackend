@@ -36,6 +36,7 @@ def create_app():
         from .routes.formato_routes import formato_bp
         from .routes.promedio_routes import prom_bp
         from .routes.ticket_routes import tickets_bp
+        from .routes.retroalimentacion_routes import retroalimentacion_bp
         from .main_routes import routes_blueprint  # Importar el Blueprint definido en routes.py
 
 
@@ -51,6 +52,7 @@ def create_app():
         app.register_blueprint(formato_bp, url_prefix='/api/formatos')  # Registrar el Blueprint de formatos
         app.register_blueprint(prom_bp, url_prefix='/api/promedio')
         app.register_blueprint(tickets_bp, url_prefix='/api/tickets')  # Registrar el Blueprint principal
+        app.register_blueprint(retroalimentacion_bp, url_prefix='/api/retroalimentacion')  # Registrar el Blueprint de retroalimentación
         app.register_blueprint(routes_blueprint, url_prefix='/api')
     
     return app

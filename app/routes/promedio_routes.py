@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario, Evaluacion
+from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado
 from app import db
 from collections import defaultdict
+from datetime import datetime, date
 
 
 # Definición del Blueprint para las rutas de obtención de datos
@@ -165,6 +166,188 @@ def obtener_promedio_aspectos():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@prom_bp.route('/evaluaciones/encargados-por-periodo', methods=['GET', 'OPTIONS'])
+def obtener_encargados_por_periodo():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Obtener parámetros de la consulta
+        periodo_tipo = request.args.get('periodo_tipo')  # 'month', 'week', 'year'
+        periodo_valor = request.args.get('periodo_valor')  # valor del período
+        usuario_id = request.args.get('usuario_id', type=int)  # opcional, para filtrar por usuario específico
+        
+        # Validar parámetros requeridos
+        if not periodo_tipo or not periodo_valor:
+            return jsonify({
+                'error': 'Se requieren los parámetros periodo_tipo y periodo_valor'
+            }), 400
+            
+        # Validar tipo de período
+        if periodo_tipo not in ['month', 'week', 'year']:
+            return jsonify({
+                'error': 'periodo_tipo debe ser: month, week o year'
+            }), 400
+        
+        # Construir consulta base usando Evaluacion_Encargado
+        query = Evaluacion_Encargado.query
+        
+        # Aplicar filtros de período
+        if periodo_tipo == 'week':
+            try:
+                semana = int(periodo_valor)
+                query = query.filter(Evaluacion_Encargado.num_semana == semana)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para semana'}), 400
+                
+        elif periodo_tipo == 'month':
+            try:
+                mes = int(periodo_valor)
+                query = query.filter(db.extract('month', Evaluacion_Encargado.fecha_evaluacion) == mes)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para mes'}), 400
+                
+        elif periodo_tipo == 'year':
+            try:
+                año = int(periodo_valor)
+                query = query.filter(db.extract('year', Evaluacion_Encargado.fecha_evaluacion) == año)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para año'}), 400
+        
+        # Filtro opcional por usuario específico (buscar en encargado por usuario_id)
+        if usuario_id:
+            # Primero obtener el encargado_id correspondiente al usuario_id
+            encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
+            if encargado:
+                query = query.filter(Evaluacion_Encargado.encargado_id == encargado.id)
+            else:
+                return jsonify({
+                    'mensaje': 'No se encontró un encargado asociado a este usuario',
+                    'encargados': [],
+                    'total_encargados': 0
+                }), 404
+        
+        # Ejecutar consulta
+        evaluaciones = query.all()
+        
+        if not evaluaciones:
+            return jsonify({
+                'mensaje': f'No se encontraron evaluaciones para {periodo_tipo}: {periodo_valor}',
+                'encargados': [],
+                'total_encargados': 0
+            }), 200
+        
+        # Obtener IDs únicos de encargados
+        encargado_ids = {eval.encargado_id for eval in evaluaciones}
+        
+        # Consultar información de encargados
+        encargados = Encargado.query.filter(Encargado.id.in_(encargado_ids)).all()
+        encargados_dict = {enc.id: {
+            'nombre': enc.nombre,
+            'tipo_evaluacion': enc.tipo_evaluacion,
+            'activo': enc.activo,
+            'usuario_id': enc.usuario_id
+        } for enc in encargados}
+        
+        # Agrupar evaluaciones por encargado y fecha
+        evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
+        for eval in evaluaciones:
+            fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
+            encargado_id = eval.encargado_id
+            evaluaciones_agrupadas[encargado_id][fecha_str].append(eval)
+        
+        # Procesar datos por encargado
+        resultados_encargados = []
+        
+        for encargado_id, fechas in evaluaciones_agrupadas.items():
+            encargado_info = encargados_dict.get(encargado_id, {
+                'nombre': f'Encargado ID {encargado_id} (No encontrado)',
+                'tipo_evaluacion': 1,
+                'activo': False,
+                'usuario_id': None
+            })
+            
+            tipo_encargado = encargado_info.get('tipo_evaluacion', 1)
+            total_evaluaciones_completas = 0
+            suma_porcentaje_total = 0.0
+            usuarios_evaluados = set()  # Cambié de empleados a usuarios ya que en evaluacion_encargado se evalúan usuarios
+            fechas_evaluacion = set()
+            
+            for fecha, evals in fechas.items():
+                fechas_evaluacion.add(fecha)
+                
+                # Filtrar evaluaciones donde ausente=0 (no ausentes)
+                evals_presentes = [e for e in evals if e.ausente == 0]
+                
+                if not evals_presentes:
+                    continue
+                
+                # Agrupar por usuario para verificar evaluaciones completas
+                usuarios_por_fecha = {}
+                for eval in evals_presentes:
+                    if eval.usuario_id not in usuarios_por_fecha:
+                        usuarios_por_fecha[eval.usuario_id] = []
+                    usuarios_por_fecha[eval.usuario_id].append(eval)
+                
+                # Verificar evaluaciones completas por usuario
+                for usuario_eval_id, evals_usuario in usuarios_por_fecha.items():
+                    aspectos_requeridos = 9 if tipo_encargado == 1 else 8
+                    
+                    if len(evals_usuario) == aspectos_requeridos:
+                        total_evaluaciones_completas += 1
+                        usuarios_evaluados.add(usuario_eval_id)
+                        
+                        # Sumar los porcentajes de todos los aspectos
+                        suma_porcentaje = sum(float(eval.porcentaje_total) for eval in evals_usuario)
+                        suma_porcentaje_total += suma_porcentaje
+            
+            # Calcular calificación promedio
+            if total_evaluaciones_completas > 0:
+                divisor = 500  # Para ambos tipos
+                porcentaje_final = (suma_porcentaje_total / (divisor * total_evaluaciones_completas)) * 100
+                porcentaje_final = min(porcentaje_final, 100.0)
+            else:
+                porcentaje_final = 0.0
+            
+            resultados_encargados.append({
+                'encargado_id': encargado_id,
+                'usuario_id': encargado_info.get('usuario_id'),
+                'nombre': encargado_info.get('nombre'),
+                'tipo_evaluacion': tipo_encargado,
+                'activo': encargado_info.get('activo'),
+                'calificacion_promedio': round(porcentaje_final, 2),
+                'total_evaluaciones_completas': total_evaluaciones_completas,
+                'total_usuarios_evaluados': len(usuarios_evaluados),
+                'fechas_evaluacion': sorted(list(fechas_evaluacion)),
+                'periodo_consultado': {
+                    'tipo': periodo_tipo,
+                    'valor': periodo_valor
+                }
+            })
+        
+        # Ordenar por calificación promedio (mayor a menor)
+        resultados_encargados.sort(key=lambda x: x['calificacion_promedio'], reverse=True)
+        
+        # Calcular estadísticas generales
+        promedio_general = 0
+        if resultados_encargados:
+            promedio_general = sum(enc['calificacion_promedio'] for enc in resultados_encargados) / len(resultados_encargados)
+        
+        response_data = {
+            'periodo_consultado': {
+                'tipo': periodo_tipo,
+                'valor': periodo_valor
+            },
+            'total_encargados': len(resultados_encargados),
+            'promedio_general': round(promedio_general, 2),
+            'encargados': resultados_encargados
+        }
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Error interno del servidor: {str(e)}'}), 500
 
 @prom_bp.route('/evaluaciones/export-por-encargado', methods=['GET'])
 def exportar_evaluaciones_por_encargado():
