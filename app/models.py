@@ -234,28 +234,17 @@ class Ticket(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     titulo = db.Column(db.String(45), nullable=False)
     descripcion = db.Column(db.Text, nullable=False)
-    tipo_ticket = db.Column(db.Integer,db.ForeignKey('tipo_ticket.id'), nullable=False)
+    departamento = db.Column(db.String(255), nullable=False)
     estado = db.Column(db.String(45), nullable=False, default='Abierto')  # Estado del ticket, por defecto 'Abierto'
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
-    asignado_a = db.Column(db.Integer,db.ForeignKey('usuarios.id'), nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_cierre = db.Column(db.DateTime)
     imagen = db.Column(db.String(255), nullable=True)  # Ruta de la imagen, si aplica
 
-    tipo_ticket_rel = db.relationship('TipoTicket', backref='tickets')
     usuario_rel = db.relationship('Usuario', foreign_keys=[usuario_id], backref='tickets_creados')
-    asignado_rel = db.relationship('Usuario', foreign_keys=[asignado_a], backref='tickets_asignados')
 
 
     def __repr__(self):
-        return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}, Asignado a: {self.asignado_a}>'
+        return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}>'
 
-class TipoTicket(db.Model):
-    __tablename__ = 'tipo_ticket'
-
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    nombre = db.Column(db.String(45), nullable=False)
-
-    def __repr__(self):
-        return f'<TipoTicket ID: {self.id}, Nombre: {self.nombre}>'
     

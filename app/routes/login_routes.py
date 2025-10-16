@@ -37,6 +37,8 @@ def login():
         # Si el encargado existe, obtenemos su ID y tipo_evaluacion, sino usamos null o un identificador especial
         id_encargado = encargado.id if encargado else None
 
+        puesto_encargado = encargado.puesto if encargado else None
+
         # 👇 Lógica para eliminar evaluaciones temporales caducadas
         if id_encargado:
             semana_actual = datetime.now().isocalendar()[1]
@@ -62,6 +64,7 @@ def login():
         , {'nombre': nombre},
         {'id_encargado': id_encargado},
         {'usuario_id': usuario_id},
-        {'tipo_evaluacion': tipo_evaluacion}), 200
+        {'tipo_evaluacion': tipo_evaluacion},
+        {'puesto_encargado': puesto_encargado}), 200
 
     return jsonify({'message': 'Usuario o contraseña incorrectos'}), 401

@@ -564,3 +564,154 @@ def exportar_evaluaciones_por_encargado():
         
     except Exception as e:
         return jsonify({'error': f'Error interno del servidor: {str(e)}'}), 500
+
+@prom_bp.route('/evaluaciones/aspectos-por-encargado', methods=['GET', 'OPTIONS'])
+def obtener_aspectos_por_encargado():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        # Obtener parámetros de la consulta
+        encargado_id = request.args.get('encargado_id', type=int)
+        periodo_tipo = request.args.get('periodo_tipo')  # 'month', 'week', 'year'
+        periodo_valor = request.args.get('periodo_valor')  # valor del período
+        
+        # Validar parámetros requeridos
+        if not encargado_id:
+            return jsonify({
+                'error': 'Se requiere el parámetro encargado_id'
+            }), 400
+            
+        if not periodo_tipo or not periodo_valor:
+            return jsonify({
+                'error': 'Se requieren los parámetros periodo_tipo y periodo_valor'
+            }), 400
+            
+        # Validar tipo de período
+        if periodo_tipo not in ['month', 'week', 'year']:
+            return jsonify({
+                'error': 'periodo_tipo debe ser: month, week o year'
+            }), 400
+        
+        # Verificar que el encargado existe
+        encargado = Encargado.query.get(encargado_id)
+        if not encargado:
+            return jsonify({
+                'error': 'Encargado no encontrado'
+            }), 404
+        
+        # Construir consulta base usando Evaluacion_Encargado
+        query = Evaluacion_Encargado.query.filter(
+            Evaluacion_Encargado.encargado_id == encargado_id,
+            Evaluacion_Encargado.ausente == False  # Solo evaluaciones presentes
+        )
+        
+        # Aplicar filtros de período
+        if periodo_tipo == 'week':
+            try:
+                semana = int(periodo_valor)
+                query = query.filter(Evaluacion_Encargado.num_semana == semana)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para semana'}), 400
+                
+        elif periodo_tipo == 'month':
+            try:
+                mes = int(periodo_valor)
+                query = query.filter(db.extract('month', Evaluacion_Encargado.fecha_evaluacion) == mes)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para mes'}), 400
+                
+        elif periodo_tipo == 'year':
+            try:
+                año = int(periodo_valor)
+                query = query.filter(db.extract('year', Evaluacion_Encargado.fecha_evaluacion) == año)
+            except ValueError:
+                return jsonify({'error': 'periodo_valor debe ser un número para año'}), 400
+        
+        # Ejecutar consulta
+        evaluaciones = query.all()
+        
+        if not evaluaciones:
+            return jsonify({
+                'mensaje': f'No se encontraron evaluaciones para el encargado en {periodo_tipo}: {periodo_valor}',
+                'encargado_id': encargado_id,
+                'encargado_nombre': encargado.nombre,
+                'aspectos': [],
+                'calificacion_total': 0.0,
+                'total_evaluaciones': 0
+            }), 200
+        
+        # Agrupar evaluaciones por aspecto
+        aspectos_agrupados = defaultdict(list)
+        for eval in evaluaciones:
+            aspectos_agrupados[eval.aspecto].append(eval)
+        
+        # Procesar aspectos según el tipo de período
+        aspectos_resultado = []
+        suma_total_porcentajes = 0.0
+        
+        for aspecto, evals_aspecto in aspectos_agrupados.items():
+            if periodo_tipo == 'week':
+                # Para semana: tomar la evaluación más reciente (debería ser única)
+                eval_reciente = max(evals_aspecto, key=lambda x: x.fecha_evaluacion)
+                
+                aspecto_data = {
+                    'aspecto': aspecto,
+                    'puntos': float(eval_reciente.total_puntos),
+                    'porcentaje': float(eval_reciente.porcentaje_total),
+                    'comentarios': eval_reciente.comentarios or '',
+                    'fecha': eval_reciente.fecha_evaluacion.strftime('%Y-%m-%d')
+                }
+                suma_total_porcentajes += float(eval_reciente.porcentaje_total)
+                
+            else:
+                # Para mes/año: calcular promedio
+                total_puntos = sum(float(eval.total_puntos) for eval in evals_aspecto)
+                total_porcentaje = sum(float(eval.porcentaje_total) for eval in evals_aspecto)
+                num_evaluaciones = len(evals_aspecto)
+                
+                promedio_puntos = total_puntos / num_evaluaciones
+                promedio_porcentaje = total_porcentaje / num_evaluaciones
+                
+                # Concatenar comentarios únicos (no vacíos)
+                comentarios_unicos = list(set([
+                    eval.comentarios for eval in evals_aspecto 
+                    if eval.comentarios and eval.comentarios.strip()
+                ]))
+                comentarios_texto = ' | '.join(comentarios_unicos) if comentarios_unicos else ''
+                
+                aspecto_data = {
+                    'aspecto': aspecto,
+                    'puntos': round(promedio_puntos, 2),
+                    'porcentaje': round(promedio_porcentaje, 2),
+                    'comentarios': comentarios_texto,
+                    'num_evaluaciones': num_evaluaciones,
+                    'fechas': [eval.fecha_evaluacion.strftime('%Y-%m-%d') for eval in evals_aspecto]
+                }
+                suma_total_porcentajes += promedio_porcentaje
+            
+            aspectos_resultado.append(aspecto_data)
+        
+        # Calcular calificación total usando la fórmula correcta
+        calificacion_total = (suma_total_porcentajes * 100) / 500
+        calificacion_total = min(calificacion_total, 100.0)  # Limitar a 100%
+        
+        # Ordenar aspectos por porcentaje (mayor a menor)
+        aspectos_resultado.sort(key=lambda x: x['porcentaje'], reverse=True)
+        
+        return jsonify({
+            'encargado_id': encargado_id,
+            'encargado_nombre': encargado.nombre,
+            'tipo_evaluacion': encargado.tipo_evaluacion,
+            'periodo_tipo': periodo_tipo,
+            'periodo_valor': periodo_valor,
+            'calificacion_total': round(calificacion_total, 2),
+            'suma_porcentajes': round(suma_total_porcentajes, 2),
+            'total_aspectos': len(aspectos_resultado),
+            'aspectos': aspectos_resultado
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Error al obtener aspectos por encargado: {str(e)}'
+        }), 500

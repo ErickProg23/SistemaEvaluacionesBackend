@@ -1,7 +1,7 @@
 import os
 from flask import Blueprint, request, jsonify
 from datetime import datetime
-from app.models import Ticket, TipoTicket, db
+from app.models import Ticket, db
 from werkzeug.utils import secure_filename
 
 
@@ -17,32 +17,28 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 @tickets_bp.route('/nuevo', methods=['POST'])
 def crear_ticket():
-    data = request.form  # Para recibir datos + archivos juntos, mejor usar form
+    data = request.form
     titulo = data.get('titulo')
     descripcion = data.get('descripcion')
-    tipo_ticket_id = data.get('tipo')
+    departamento = data.get('departamento')
     usuario_id = data.get('usuario_id')
 
-    if not titulo or not descripcion or not tipo_ticket_id or not usuario_id:
+    if not titulo or not descripcion or not departamento or not usuario_id:
         return jsonify({'error': 'Faltan campos requeridos'}), 400
 
     imagen = request.files.get('imagen')
     nombre_imagen = None
-
     if imagen:
-        # Sanear el nombre del archivo
         nombre_imagen = secure_filename(imagen.filename)
-        # Guardar el archivo en la carpeta uploads
         imagen.save(os.path.join(UPLOAD_FOLDER, nombre_imagen))
 
     nuevo_ticket = Ticket(
         titulo=titulo,
         descripcion=descripcion,
-        tipo_ticket=tipo_ticket_id,
+        departamento=departamento,
         estado='Abierto',
-        usuario_id=usuario_id,
-        asignado_a=1,
-        imagen=nombre_imagen  # Guarda el nombre del archivo en la BD
+        usuario_id=int(usuario_id),
+        imagen=nombre_imagen
     )
 
     db.session.add(nuevo_ticket)
@@ -54,26 +50,35 @@ def crear_ticket():
 
 @tickets_bp.route('/obtener-tickets', methods=['GET'])
 def obtener_tickets():
-    usuario_id = request.args.get('usuario_id')
+    usuario_id = request.args.get('usuario_id', type=int)
     if not usuario_id:
         return jsonify({'error': 'Falta el ID del usuario'}), 400
 
-    tickets = Ticket.query.filter_by(usuario_id=usuario_id).all()
-    resultado = []
+    # Obtener rol del usuario
+    from app.models import Usuario
+    usuario = Usuario.query.get(usuario_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
 
+    # Rol 1: ver tickets del departamento "Sistemas"
+    if usuario.rol_id == 1:
+        tickets = Ticket.query.filter(Ticket.departamento == 'Sistemas').all()
+    else:
+        # Otros roles: ver tickets creados por el usuario
+        tickets = Ticket.query.filter(Ticket.usuario_id == usuario_id).all()
+
+    resultado = []
     for ticket in tickets:
         resultado.append({
             'id': ticket.id,
             'titulo': ticket.titulo,
             'descripcion': ticket.descripcion,
-            'tipo_ticket': ticket.tipo_ticket_rel.nombre if ticket.tipo_ticket_rel else None,
+            'usuario_id': ticket.usuario_id,
+            'departamento': getattr(ticket, 'departamento', None),
             'estado': ticket.estado,
-            'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S'),
-            'asignado_a': ticket.asignado_a,
-            'usuario': {
-                'id': ticket.usuario_rel.id,
-                'nombre': ticket.usuario_rel.nombre
-            } if ticket.usuario_rel else None
+            'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
+            'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
+            'imagen': ticket.imagen
         })
 
     return jsonify(resultado), 200
@@ -99,10 +104,40 @@ def detalle_ticket(ticket_id):
         'id': ticket.id,
         'titulo': ticket.titulo,
         'descripcion': ticket.descripcion,
-        'tipo_ticket': ticket.tipo_ticket_rel.nombre if ticket.tipo_ticket_rel else None,
+        'departamento': ticket.departamento,
         'estado': ticket.estado,
-        'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S'),
-        'asignado_a': ticket.asignado_a,
-        'imagen': ticket.imagen  # nombre o ruta del archivo
+        'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
+        'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
+        'imagen': ticket.imagen
     }
     return jsonify(resultado), 200
+
+@tickets_bp.route('/actualizar-estado/<int:ticket_id>', methods=['PUT'])
+def actualizar_estado_ticket(ticket_id):
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return jsonify({'error': 'Ticket no encontrado'}), 404
+
+    data = request.get_json(silent=True) or {}
+    nuevo_estado = data.get('estado')
+
+    if not nuevo_estado:
+        return jsonify({'error': 'Se requiere el campo estado'}), 400
+
+    ticket.estado = nuevo_estado
+
+    if nuevo_estado.lower() == 'concluido':
+        ticket.fecha_cierre = datetime.utcnow()
+    else:
+        ticket.fecha_cierre = None
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Estado actualizado correctamente',
+        'ticket': {
+            'id': ticket.id,
+            'estado': ticket.estado,
+            'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None
+        }
+    }), 200
