@@ -4,11 +4,13 @@ from flask_jwt_extended import JWTManager
 from flask_bcrypt import Bcrypt
 from app.config import Config
 from flask_cors import CORS
+from flask_mail import Mail
 
 # Inicialización de las extensiones
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 jwt = JWTManager()
+mail = Mail()
 
 def create_app():
     app = Flask(__name__)
@@ -21,6 +23,7 @@ def create_app():
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
+    mail.init_app(app)
 
     # Importar las rutas y modelos para inicializarlos
     with app.app_context():
@@ -37,6 +40,7 @@ def create_app():
         from .routes.promedio_routes import prom_bp
         from .routes.ticket_routes import tickets_bp
         from .routes.retroalimentacion_routes import retroalimentacion_bp
+        from .routes.uploads_routes import uploads_bp
         from .main_routes import routes_blueprint  # Importar el Blueprint definido en routes.py
 
 
@@ -54,5 +58,6 @@ def create_app():
         app.register_blueprint(tickets_bp, url_prefix='/api/tickets')  # Registrar el Blueprint principal
         app.register_blueprint(retroalimentacion_bp, url_prefix='/api/retroalimentacion')  # Registrar el Blueprint de retroalimentación
         app.register_blueprint(routes_blueprint, url_prefix='/api')
+        app.register_blueprint(uploads_bp, url_prefix='/uploads')
     
     return app

@@ -221,3 +221,57 @@ def obtener_encargado(id):
         return jsonify(encargado_data), 200
     else:
         return jsonify({'message': 'No se pudo extraer la información'}), 404
+
+
+# Dentro del blueprint datos_bp
+@datos_bp.route('/usuarios/empleados-de-usuario/<int:usuario_id>', methods=['GET'])
+def obtener_empleados_de_usuario(usuario_id):
+    try:
+        # 1) Validar usuario
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+
+        # 2) Encargados ligados por FK directa (usuario_id)
+        encargados_fk = Encargado.query.filter(
+            Encargado.usuario_id == usuario_id,
+            Encargado.activo == True
+        ).all()
+
+        # 3) Encargados ligados por tabla intermedia (encargado_usuario)
+        encargados_rel = [e for e in getattr(usuario, 'encargados_relacionados', []) if e.activo]
+
+        # 4) Unificar IDs de encargados
+        encargados_ids = {e.id for e in encargados_fk} | {e.id for e in encargados_rel}
+        if not encargados_ids:
+            return jsonify([]), 200
+
+        # 5) Obtener empleados activos ligados a cualquiera de esos encargados
+        #    (usamos la relación Encargado.empleados para fiabilidad)
+        encargados = Encargado.query.filter(Encargado.id.in_(list(encargados_ids))).all()
+        empleados_unicos = {}
+        for enc in encargados:
+            for emp in enc.empleados:
+                if emp.activo:
+                    empleados_unicos[emp.id] = emp
+
+        if not empleados_unicos:
+            return jsonify([]), 200
+
+        # 6) Armar respuesta
+        empleados_data = [
+            {
+                'id': emp.id,
+                'nombre': emp.nombre,
+                'puesto': emp.puesto,
+                'num_empleado': emp.num_empleado,
+                'tipo_evaluacion': emp.tipo_evaluacion,
+                'activo': emp.activo
+            }
+            for emp in empleados_unicos.values()
+        ]
+
+        return jsonify(empleados_data), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

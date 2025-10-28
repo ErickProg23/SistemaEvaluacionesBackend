@@ -240,11 +240,13 @@ class Ticket(db.Model):
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_cierre = db.Column(db.DateTime)
     imagen = db.Column(db.String(255), nullable=True)  # Ruta de la imagen, si aplica
+    asignado_a = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=True)  # ID del empleado asignado, si aplica
 
     usuario_rel = db.relationship('Usuario', foreign_keys=[usuario_id], backref='tickets_creados')
+    empleado_rel = db.relationship('Empleado', foreign_keys=[asignado_a], backref='tickets_asignados')
 
 
     def __repr__(self):
-        return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}>'
+        return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}, Asignado A: {self.asignado_a}>'
 
     
