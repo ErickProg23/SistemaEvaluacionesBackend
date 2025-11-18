@@ -97,40 +97,112 @@ def crear_ticket():
     }), 200
 
 
-
 @tickets_bp.route('/obtener-tickets', methods=['GET'])
 def obtener_tickets():
     usuario_id = request.args.get('usuario_id', type=int)
+    departamento_param = request.args.get('departamento', type=str)
+
     if not usuario_id:
         return jsonify({'error': 'Falta el ID del usuario'}), 400
 
     # Obtener usuario y rol
-    from app.models import Usuario, Encargado
+    from app.models import Usuario, Encargado, Ticket, db
     usuario = Usuario.query.get(usuario_id)
     if not usuario:
         return jsonify({'error': 'Usuario no encontrado'}), 404
 
-    # Mapeo de puesto → departamento destino
+    # Mapeo de puesto → departamento destino (para encargados)
     puesto_a_departamento = {
         'encargado mantenimiento': 'Mantenimiento',
         'ama de llaves': 'Ama de llaves',
         'seguridad y bienestar': 'Seguridad',
     }
 
+    def normalizar(s):
+        return s.strip().lower() if isinstance(s, str) else ''
+
+    # Determinar el departamento autorizado por el usuario
+    dept_autorizado = None
     if usuario.rol_id == 1:
-        # Rol Sistemas: ve tickets del departamento Sistemas
-        tickets = Ticket.query.filter(db.func.lower(Ticket.departamento) == 'sistemas').all()
+        # Rol Sistemas: solo ve tickets del departamento Sistemas (igual que tu lógica actual)
+        dept_autorizado = 'Sistemas'
     else:
-        # Otros roles: obtener encargado asociado y filtrar por su departamento
+        # Intentar por encargado asociado
         encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
-        if not encargado:
-            return jsonify({'error': 'No se encontró un encargado asociado a este usuario'}), 404
+        if encargado:
+            dept_autorizado = puesto_a_departamento.get(normalizar(encargado.puesto))
+        else:
+            # Fallback para usuarios visualizadores (no encargados): por nombre de usuario
+            dept_autorizado = visualizador_nombre_a_departamento.get(normalizar(usuario.nombre))
 
-        departamento_objetivo = puesto_a_departamento.get(encargado.puesto.strip().lower())
-        if not departamento_objetivo:
-            return jsonify({'error': f'Puesto "{encargado.puesto}" no mapeado a un departamento'}), 400
+    # Si el cliente pide un departamento específico, validarlo contra el autorizado
+    if departamento_param:
+        if not dept_autorizado:
+            return jsonify({'error': 'No se determinó el departamento autorizado para el usuario'}), 400
 
-        tickets = Ticket.query.filter(db.func.lower(Ticket.departamento) == departamento_objetivo.lower()).all()
+        if normalizar(departamento_param) != normalizar(dept_autorizado):
+            return jsonify({'error': 'Departamento no autorizado para este usuario'}), 403
+
+        departamento_objetivo = departamento_param
+    else:
+        if not dept_autorizado:
+            return jsonify({'error': 'No se determinó el departamento autorizado para el usuario'}), 400
+        departamento_objetivo = dept_autorizado
+
+    # Consulta
+    tickets = Ticket.query.filter(
+        db.func.lower(Ticket.departamento) == normalizar(departamento_objetivo)
+    ).all()
+
+    # Respuesta
+    resultado = []
+    for ticket in tickets:
+        resultado.append({
+            'id': ticket.id,
+            'titulo': ticket.titulo,
+            'descripcion': ticket.descripcion,
+            'departamento': getattr(ticket, 'departamento', None),
+            'estado': ticket.estado,
+            'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
+            'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
+            'usuario_id': ticket.usuario_id,
+            'usuario_nombre': ticket.usuario_rel.nombre if ticket.usuario_rel else None,
+            'asignado_a_id': ticket.asignado_a,
+            'asignado_a_nombre': ticket.empleado_rel.nombre if ticket.empleado_rel else None
+        })
+
+    return jsonify(resultado), 200
+
+@tickets_bp.route('/obtener-tickets-por-departamento', methods=['GET'])
+def obtener_tickets_por_departamento():
+    usuario_id = request.args.get('usuario_id', type=int)
+    departamento_param = request.args.get('departamento', type=str)
+
+    if not usuario_id:
+        return jsonify({'error': 'Falta el ID del usuario'}), 400
+    if not departamento_param:
+        return jsonify({'error': 'Falta el parámetro departamento'}), 400
+
+    from app.models import Usuario, Encargado, Ticket, db
+    usuario = Usuario.query.get(usuario_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    # Este servicio es para usuarios que NO son de Sistemas ni Encargados
+    if usuario.rol_id == 1:
+        return jsonify({'error': 'No autorizado en este servicio (Sistemas)'}), 403
+
+    encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
+    if encargado:
+        return jsonify({'error': 'No autorizado en este servicio (Encargado)'}), 403
+
+    def normalizar(s):
+        return s.strip().lower() if isinstance(s, str) else ''
+
+    # Filtrar exclusivamente por el departamento proporcionado
+    tickets = Ticket.query.filter(
+        db.func.lower(Ticket.departamento) == normalizar(departamento_param)
+    ).all()
 
     resultado = []
     for ticket in tickets:
@@ -142,15 +214,13 @@ def obtener_tickets():
             'estado': ticket.estado,
             'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
             'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
-            # Eliminado: 'imagen'
             'usuario_id': ticket.usuario_id,
             'usuario_nombre': ticket.usuario_rel.nombre if ticket.usuario_rel else None,
             'asignado_a_id': ticket.asignado_a,
             'asignado_a_nombre': ticket.empleado_rel.nombre if ticket.empleado_rel else None
         })
 
-    return jsonify(resultado), 200
-
+    return jsonify(resultado), 200    
 
 
 @tickets_bp.route('/tipo-tickets', methods=['GET'])
