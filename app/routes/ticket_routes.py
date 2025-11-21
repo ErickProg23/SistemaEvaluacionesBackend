@@ -17,36 +17,43 @@ DEPARTAMENTO_DESTINATARIOS = {
     'seguridad': ['sehsl@araizahoteles.com'],
 }
 
-# Carpeta de uploads en el nivel del proyecto
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-def allowed_file(filename: str) -> bool:
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 @tickets_bp.route('/nuevo', methods=['POST'])
 def crear_ticket():
-    data = request.get_json(silent=True) or request.form
-    titulo = data.get('titulo')
-    descripcion = data.get('descripcion')
-    departamento = data.get('departamento')
-    usuario_id = data.get('usuario_id')
+    # Detectar formato y extraer datos
+    data = request.get_json(silent=True) if request.is_json else request.form
 
-    if not titulo or not descripcion or not departamento or not usuario_id:
-        return jsonify({'error': 'Faltan campos requeridos'}), 400
+    # Normalizar y extraer campos
+    titulo = (data.get('titulo') or '').strip()
+    descripcion = (data.get('descripcion') or '').strip()
+    departamento = (data.get('departamento') or '').strip()
 
-    # Eliminado: manejo de archivos/imagen
-    # Eliminado: allowed_file / secure_filename / UPLOAD_FOLDER
+    # usuario_id puede venir en form-data o también en query; tomar cualquiera
+    usuario_id_raw = data.get('usuario_id') or request.args.get('usuario_id')
+    try:
+        usuario_id = int(str(usuario_id_raw).strip()) if usuario_id_raw is not None and str(usuario_id_raw).strip() != '' else None
+    except (ValueError, TypeError):
+        usuario_id = None
+
+    # Validación detallada para identificar campos faltantes
+    faltantes = []
+    if not titulo:
+        faltantes.append('titulo')
+    if not descripcion:
+        faltantes.append('descripcion')
+    if not departamento:
+        faltantes.append('departamento')
+    if not usuario_id:
+        faltantes.append('usuario_id')
+
+    if faltantes:
+        return jsonify({'error': 'Faltan campos requeridos', 'campos': faltantes}), 400
 
     nuevo_ticket = Ticket(
         titulo=titulo,
         descripcion=descripcion,
         departamento=departamento,
         estado='Abierto',
-        usuario_id=int(usuario_id)
-        # Eliminado: imagen=nombre_imagen
+        usuario_id=usuario_id
     )
 
     db.session.add(nuevo_ticket)
