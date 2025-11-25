@@ -15,6 +15,7 @@ DEPARTAMENTO_DESTINATARIOS = {
     'mantenimiento': ['mantenimientosanluis@araizahoteles.com'],
     'ama de llaves': ['amadellaves.sanluis@araizahoteles.com'],
     'seguridad': ['sehsl@araizahoteles.com'],
+    'ayb': ['aybsanluis@araizahoteles.com'],
 }
 
 @tickets_bp.route('/nuevo', methods=['POST'])
@@ -123,6 +124,7 @@ def obtener_tickets():
         'encargado mantenimiento': 'Mantenimiento',
         'ama de llaves': 'Ama de llaves',
         'seguridad y bienestar': 'Seguridad',
+        'ayb': 'AyB'
     }
 
     def normalizar(s):
