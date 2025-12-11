@@ -243,6 +243,21 @@ def obtener_tipos_tickets():
 
     return jsonify(resultado), 200
 
+@tickets_bp.route('/obtener-todos', methods=['GET'])
+def obtener_todos_tickets():
+    tickets = Ticket.query.all()
+
+    resultado = [
+        {
+            'id': ticket.id,
+            'estado': ticket.estado,
+            'departamento': ticket.departamento
+        }
+        for ticket in tickets
+    ]
+
+    return jsonify(resultado), 200
+
 @tickets_bp.route('/detalle-ticket/<int:ticket_id>', methods=['GET'])
 def detalle_ticket(ticket_id):
     ticket = Ticket.query.get(ticket_id)
