@@ -248,4 +248,23 @@ class Ticket(db.Model):
     def __repr__(self):
         return f'<Ticket ID: {self.id}, Titulo: {self.titulo}, Estado: {self.estado}, Usuario ID: {self.usuario_id}, Asignado A: {self.asignado_a}>'
 
+class Configuracion(db.Model):
+    __tablename__ = 'configuraciones'
+
+    clave = db.Column(db.String(50), primary_key=True)
+    valor = db.Column(db.String(255), nullable=True)
+
+    def __repr__(self):
+        return f'<Configuracion {self.clave}: {self.valor}>'
+
+class TarifaHabitacion(db.Model):
+    __tablename__ = 'tarifas_habitaciones'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    precio_mxn = db.Column(db.Numeric(10, 2), nullable=False)
+    orden = db.Column(db.Integer, default=0)
+
+    def __repr__(self):
+        return f'<TarifaHabitacion {self.nombre}: {self.precio_mxn}>'
     

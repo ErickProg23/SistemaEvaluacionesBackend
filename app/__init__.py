@@ -42,6 +42,8 @@ def create_app():
         from .routes.retroalimentacion_routes import retroalimentacion_bp
         from .routes.uploads_routes import uploads_bp
         from .routes.roles_routes import roles_bp
+        from .routes.tarifas_routes import tarifas_bp
+        from .routes.configuracion_routes import configuracion_bp
         from .main_routes import routes_blueprint  # Importar el Blueprint definido en routes.py
 
 
@@ -59,6 +61,8 @@ def create_app():
         app.register_blueprint(tickets_bp, url_prefix='/api/tickets')  # Registrar el Blueprint principal
         app.register_blueprint(retroalimentacion_bp, url_prefix='/api/retroalimentacion')  # Registrar el Blueprint de retroalimentación
         app.register_blueprint(roles_bp, url_prefix='/api/roles')  # Registrar el Blueprint de roles
+        app.register_blueprint(tarifas_bp, url_prefix='/api/tarifas')
+        app.register_blueprint(configuracion_bp, url_prefix='/api/configuracion')
         app.register_blueprint(routes_blueprint, url_prefix='/api')
         app.register_blueprint(uploads_bp, url_prefix='/uploads')
     
