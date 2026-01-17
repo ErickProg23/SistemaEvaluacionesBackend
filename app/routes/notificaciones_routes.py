@@ -1,13 +1,109 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from app.models import Empleado, Encargado, Usuario, Pregunta, Notificacion
 from app import db
 from sqlalchemy import update
 from datetime import datetime, timedelta
-
-
+import time
+import json
 
 # Definición del Blueprint para las rutas de obtención de datos
 notis_bp = Blueprint('notis_bp', __name__)
+
+
+#----------------------------NOTIFICACIONES REALTIME (SSE)---------------------------------------
+@notis_bp.route('/realtime', methods=['GET'])
+def realtime_notificaciones():
+    usuario_id = request.args.get('usuario_id', type=int)
+    id_encargado = request.args.get('id_encargado', type=int)
+
+    if not usuario_id and not id_encargado:
+        return jsonify({'error': 'Se requiere usuario_id o id_encargado'}), 400
+
+    # Determinar qué IDs vamos a monitorear en la columna id_encargado
+    target_ids = []
+    if usuario_id:
+        target_ids.append(usuario_id)
+    if id_encargado:
+        target_ids.append(id_encargado)
+
+    def generate():
+        # Estado local para rastrear qué hemos enviado y detectar cambios
+        # Estructura: { id_notificacion: { 'activo': bool, 'enviado': bool } }
+        known_state = {}
+        
+        # Fecha límite para no cargar historia antigua (ej. últimos 7 días para realtime)
+        # Ajustable según necesidad, pero para realtime suele interesar lo reciente.
+        # El frontend ya carga el historial con los otros endpoints.
+        # Sin embargo, si el usuario refresca, querrá ver lo actual.
+        # Usaremos la misma lógica de historial reciente (60 días) para mantener consistencia.
+        
+        try:
+            while True:
+                fecha_limite = datetime.utcnow() - timedelta(days=60)
+                
+                # Consultar DB
+                # Usamos filter(Notificacion.id_encargado.in_(target_ids)) para cubrir ambos casos
+                notificaciones = Notificacion.query.filter(
+                    Notificacion.id_encargado.in_(target_ids),
+                    Notificacion.fecha >= fecha_limite
+                ).all()
+
+                data_sent = False
+
+                for noti in notificaciones:
+                    noti_id = noti.id
+                    is_active = noti.activo
+                    
+                    # Determinar si debemos enviar este evento
+                    should_send = False
+                    
+                    if noti_id not in known_state:
+                        # Nueva notificación encontrada en este ciclo (o primera carga)
+                        should_send = True
+                        known_state[noti_id] = {'activo': is_active}
+                    elif known_state[noti_id]['activo'] != is_active:
+                        # El estado cambió (ej. se eliminó/desactivó)
+                        should_send = True
+                        known_state[noti_id]['activo'] = is_active
+                    
+                    if should_send:
+                        # Construir payload
+                        payload = {
+                            "id": noti.id,
+                            "accion": noti.accion,
+                            "fecha": noti.fecha.isoformat(),
+                            "activo": noti.activo,
+                            "notificacion": {
+                                "id": noti.id,
+                                "id_encargado": noti.id_encargado,
+                                "id_empleado": noti.id_empleado,
+                                "mensaje": "Notificación actualizada" # Opcional/Customizable
+                            }
+                        }
+                        
+                        # Formato SSE: data: <json>\n\n
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        data_sent = True
+
+                # Importante: Liberar sesión para asegurar datos frescos en la siguiente vuelta
+                # y no saturar el pool de conexiones
+                db.session.remove()
+                
+                # Si no se envió nada, podemos enviar un comentario 'keep-alive' opcional
+                # yield ": keep-alive\n\n"
+                
+                time.sleep(3) # Polling cada 3 segundos
+
+        except GeneratorExit:
+            # Cliente se desconectó
+            db.session.remove()
+            pass
+        except Exception as e:
+            print(f"Error en SSE: {e}")
+            db.session.remove()
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 
 #----------------------------NOTIFICACIONES------------------------------------------------------

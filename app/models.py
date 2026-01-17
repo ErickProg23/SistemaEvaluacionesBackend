@@ -151,11 +151,12 @@ class Evaluacion(db.Model):
     aspecto = db.Column(db.String(255), nullable=False)
     ausente = db.Column(db.Boolean, default=True)
     a_tiempo = db.Column(db.Boolean, default=True)
-    num_semana = db.Column(db.Integer, nullable=False)
     tipo_evaluacion = db.Column(db.Integer, nullable=False)
+    periodo_anio = db.Column(db.Integer, nullable=False)
+    periodo_mes = db.Column(db.Integer, nullable=False)
     
     def __repr__(self):
-        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
+        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje_total}, aTiempo: {self.a_tiempo}, TipSemana: {self.tipo_evaluacion}, Anio: {self.periodo_anio}, Mes: {self.periodo_mes}>'
 
 class Evaluacion_Encargado(db.Model):
     __tablename__='evaluacion_encargado'
@@ -172,9 +173,11 @@ class Evaluacion_Encargado(db.Model):
     a_tiempo = db.Column(db.Boolean, default=True)
     num_semana = db.Column(db.Integer, nullable=False)
     tipo_evaluacion = db.Column(db.Integer, nullable=False)
+    periodo_anio = db.Column(db.Integer, nullable=False)
+    periodo_mes = db.Column(db.Integer, nullable=False)
     
     def __repr__(self):
-        return f'<Evaluacion ID: {self.id}, Encargado ID: {self.encargado_id},Usuario ID: {self.usuario_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje}, aTiempo: {self.aTiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}>'
+        return f'<Evaluacion ID: {self.id}, Encargado ID: {self.encargado_id},Usuario ID: {self.usuario_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje_total}, aTiempo: {self.a_tiempo}, numSem: {self.num_semana}, TipSemana: {self.tipo_evaluacion}, Anio: {self.periodo_anio}, Mes: {self.periodo_mes}>'
 
 class Notificacion(db.Model):
     __tablename__ = 'notificaciones'
@@ -210,12 +213,37 @@ class EvaluacionTemporal(db.Model):
     __tablename__ = 'evaluaciones_temporales'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
-    num_semana = db.Column(db.Integer, nullable=False)
-    dato = db.Column(JSON, nullable=False)
+    id_encargado = db.Column(
+        db.Integer,
+        db.ForeignKey('encargado.id'),
+        nullable=False
+    )
+
+    periodo_anio = db.Column(db.Integer, nullable=False)
+    periodo_mes = db.Column(db.Integer, nullable=False)
+
+    dato = db.Column(db.JSON, nullable=False)
+
+    fecha_guardado = db.Column(
+        db.DateTime,
+        server_default=db.func.now(),
+        onupdate=db.func.now()
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'id_encargado',
+            'periodo_anio',
+            'periodo_mes',
+            name='uq_encargado_periodo'
+        ),
+    )
 
     def __repr__(self):
-        return f'<EvaluacionTemporal ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
+        return (
+            f'<EvaluacionTemporal Encargado:{self.id_encargado} '
+            f'Periodo:{self.periodo_mes}/{self.periodo_anio}>'
+        )
     
 class EvaluacionAtrasada(db.Model):
     __tablename__ = 'evaluaciones_atrasadas'
@@ -223,10 +251,14 @@ class EvaluacionAtrasada(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     id_encargado = db.Column(db.Integer, db.ForeignKey('encargado.id'), nullable=False)
     num_semana = db.Column(db.Integer, nullable=False)
+    periodo_mes = db.Column(db.Integer, nullable=False)
+    periodo_anio = db.Column(db.Integer, nullable=False)
+    fecha_detectado = db.Column(db.Date, default=datetime.utcnow)
+    notificado = db.Column(db.Boolean, default=False)
     activo = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
-        return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Dato: {self.dato}>'
+        return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Periodo: {self.periodo_mes}/{self.periodo_anio}, Fecha Detectado: {self.fecha_detectado}>'
 
 class Ticket(db.Model):
     __tablename__ = 'ticket'

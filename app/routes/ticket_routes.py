@@ -11,7 +11,7 @@ from app.utils import enviar_correo
 tickets_bp = Blueprint('tickets_bp', __name__)
 
 DEPARTAMENTO_DESTINATARIOS = {
-    'sistemas': ['sistemas.sl@araizahoteles.com'],
+    'sistemas': ['soportesistemas@estacioneslapopular.com'],
     'mantenimiento': ['mantenimientosanluis@araizahoteles.com'],
     'ama de llaves': ['amadellaves.sanluis@araizahoteles.com'],
     'seguridad': ['sehsl@araizahoteles.com'],
@@ -61,6 +61,62 @@ def crear_ticket():
     db.session.add(nuevo_ticket)
     db.session.commit()
 
+    # -------------------------------------------------------------------------
+    # NOTIFICACIONES INTERNAS (Para SSE)
+    # -------------------------------------------------------------------------
+    try:
+        from app.models import Notificacion, Usuario, Encargado, Rol
+        
+        # Mapa de departamento -> Puesto de Encargado (aproximado según lógica de obtener_tickets)
+        # Ajusta estas claves según los nombres reales en tu DB
+        mapa_dept_puesto = {
+            'mantenimiento': 'Encargado Mantenimiento',
+            'ama de llaves': 'Ama de Llaves',
+            'seguridad': 'Seguridad y Bienestar',
+            'ayb': 'AyB',
+            'recepcion': 'Jefe de Recepción' # o similar
+        }
+
+        destinatarios_ids = []
+        dep_key = (departamento or '').strip().lower()
+
+        if dep_key == 'sistemas':
+            # Notificar a todos los administradores de sistemas (rol_id = 1)
+            admins = Usuario.query.filter_by(rol_id=1, activo=True).all()
+            destinatarios_ids = [u.id for u in admins]
+        else:
+            # Buscar encargados que coincidan con el puesto del departamento
+            puesto_target = mapa_dept_puesto.get(dep_key)
+            if puesto_target:
+                # Búsqueda laxa por nombre de puesto (contains)
+                encargados = Encargado.query.filter(
+                    Encargado.puesto.ilike(f"%{puesto_target}%"),
+                    Encargado.activo == True
+                ).all()
+                destinatarios_ids = [e.id for e in encargados]
+
+        # Crear notificaciones
+        # NOTA: id_empleado es obligatorio en tu modelo. Usaremos un valor dummy (ej. 1) 
+        # o el ID de un empleado genérico "Sistema" si existe, para cumplir el constraint.
+        # Aquí usaremos 1 asumiendo que existe un empleado con ID 1, o 0 si tu DB lo permite.
+        dummy_empleado_id = 1 
+        
+        for dest_id in destinatarios_ids:
+            nueva_noti = Notificacion(
+                id_encargado=dest_id, # Aquí va ID de Usuario (Sistemas) o ID de Encargado
+                id_empleado=dummy_empleado_id,
+                accion=5, # 5: Nuevo ticket
+                fecha=datetime.now(),
+                activo=True
+            )
+            db.session.add(nueva_noti)
+        
+        db.session.commit()
+
+    except Exception as e:
+        current_app.logger.error(f"Error creando notificaciones internas para ticket: {e}")
+        # No hacemos rollback del ticket principal, solo logueamos el error de notificación
+    
      # Enviar correo según casos configurados
     try:
         dep_key = (departamento or '').strip().lower()

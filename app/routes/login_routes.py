@@ -39,19 +39,6 @@ def login():
 
         puesto_encargado = encargado.puesto if encargado else None
 
-        # 👇 Lógica para eliminar evaluaciones temporales caducadas
-        if id_encargado:
-            semana_actual = datetime.now().isocalendar()[1]
-            semana_anterior = semana_actual - 1 if semana_actual > 1 else 52  # Manejo del caso de la semana 1
-
-            evaluaciones = EvaluacionTemporal.query.filter_by(id_encargado=id_encargado).all()
-
-            for eval in evaluaciones:
-                if eval.num_semana < semana_anterior:
-                    db.session.delete(eval)
-
-            db.session.commit()
-
         tipo_evaluacion = encargado.tipo_evaluacion if encargado else None
         
         # Guardar el ID del usuario en una variable separada

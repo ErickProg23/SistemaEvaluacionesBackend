@@ -31,10 +31,11 @@ def guardar_evaluacion():
         data = request.json
         payload = data.get('payload')
         id_encargado = data.get('idEncargado')
-        num_semana = data.get('num_semana')
         tipo_evaluacion = data.get('tipo_evaluacion')
-
-        if not payload or not id_encargado:
+        periodo_anio = data.get('anio')
+        periodo_mes = data.get('mes')
+        
+        if not payload or not id_encargado or not periodo_anio or not periodo_mes:
             return jsonify({'error': 'Datos incompletos'}), 400
 
         for evaluacion_data in payload:
@@ -66,7 +67,8 @@ def guardar_evaluacion():
                     porcentaje_total=porcentaje,
                     comentarios=comentarios,
                     ausente=ausente_db,
-                    num_semana=num_semana,
+                    periodo_anio=periodo_anio,
+                    periodo_mes=periodo_mes,
                     tipo_evaluacion=tipo_evaluacion
                 )
                 db.session.add(nueva_evaluacion)
@@ -89,8 +91,10 @@ def guardar_evaluacionEncargado():
         id_usuario = data.get('idUsuario')
         num_semana = data.get('num_semana')
         tipo_evaluacion = data.get('tipo_evaluacion')
-
-        if not payload or not id_usuario:
+        periodo_anio = data.get('anio')
+        periodo_mes = data.get('mes')
+        
+        if not payload or not id_usuario or not periodo_anio or not periodo_mes:
             return jsonify({'error': 'Datos incompletos'}), 400
 
         for evaluacion_data in payload:
@@ -1498,17 +1502,19 @@ def guardar_evaluacion_temporal():
     data = request.get_json(force=True)
 
     id_encargado = data.get('id_encargado')
-    num_semana = data.get('num_semana')
+    periodo_anio = data.get('anio')
+    periodo_mes = data.get('mes')
     dato = data.get('dato')
 
-    if id_encargado is None or num_semana is None or dato is None:
+    if id_encargado is None or periodo_anio is None or periodo_mes is None or dato is None:
         return jsonify({'error': 'Faltan datos requeridos'}), 400
 
     try:
-        # Buscar si ya existe una evaluación temporal con ese id_encargado y num_semana
+        # Buscar si ya existe una evaluación temporal con ese id_encargado y periodo    
         evaluacion_existente = EvaluacionTemporal.query.filter_by(
             id_encargado=id_encargado,
-            num_semana=num_semana
+            periodo_anio=periodo_anio,
+            periodo_mes=periodo_mes
         ).first()
 
         if evaluacion_existente:
@@ -1519,7 +1525,8 @@ def guardar_evaluacion_temporal():
             # Si no existe, la creamos
             nueva_eval = EvaluacionTemporal(
                 id_encargado=id_encargado,
-                num_semana=num_semana,
+                periodo_anio=periodo_anio,
+                periodo_mes=periodo_mes,
                 dato=dato
             )
             db.session.add(nueva_eval)
@@ -1540,58 +1547,68 @@ def guardar_evaluacion_temporal():
 
 @evaluacion_bp.route('/buscar-evaluaciones-temporales', methods=['OPTIONS', 'GET'])
 def buscar_evaluaciones_temporales():
-    id_encargado = request.args.get('id_encargado')
-    num_semana = request.args.get('num_semana', type=int)
+    id_encargado = request.args.get('id_encargado', type=int)
 
-    if not id_encargado or num_semana is None:
-        return jsonify({'error': 'Faltan datos requeridos'}), 400
+    if not id_encargado:
+        return jsonify({'error': 'Falta id_encargado'}), 400
 
     try:
-        evaluacion = EvaluacionTemporal.query.filter_by(
-            id_encargado=id_encargado,
-            num_semana=num_semana
-        ).first()
+        evaluacion = (
+            EvaluacionTemporal.query
+            .filter_by(id_encargado=id_encargado)
+            .order_by(EvaluacionTemporal.fecha_guardado.desc())
+            .first()
+        )
 
-        if evaluacion:
-            return jsonify({
-                'id': evaluacion.id,
-                'id_encargado': evaluacion.id_encargado,
-                'num_semana': evaluacion.num_semana,
-                'dato': evaluacion.dato
-            }), 200
-        else:
-            return jsonify({}), 200  # No se encontró la evaluación
+        if not evaluacion:
+            return jsonify({}), 200
+
+        return jsonify({
+            'id': evaluacion.id,
+            'id_encargado': evaluacion.id_encargado,
+            'periodo_anio': evaluacion.periodo_anio,
+            'periodo_mes': evaluacion.periodo_mes,
+            'fecha_guardado': evaluacion.fecha_guardado,
+            'dato': evaluacion.dato
+        }), 200
 
     except Exception as e:
         print("Error al buscar evaluación:", e)
         return jsonify({'error': 'Error del servidor'}), 500
 
+
 @evaluacion_bp.route('/eliminar/evaluacion-temporal', methods=['OPTIONS', 'POST'])
 def eliminar_evaluacion_temporal():
     if request.method == 'OPTIONS':
         return '', 200
-    
-    data = request.get_json(force=True)
+
+    data = request.get_json(force=True) or {}
 
     id_encargado = data.get('id_encargado')
-    num_semana = data.get('num_semana')
+    periodo_mes = data.get('mes')
+    periodo_anio = data.get('anio')
 
-    if id_encargado is None or num_semana is None:
-        return jsonify({'error': 'Faltan datos requeridos'}), 400
+    # id_encargado siempre requerido
+    if id_encargado is None:
+        return jsonify({'error': 'Falta id_encargado'}), 400
 
     try:
-        # Buscar si existe esa evaluación temporal
-        evaluacion = EvaluacionTemporal.query.filter_by(
-            id_encargado=id_encargado,
-            num_semana=num_semana
-        ).first()
+        # Base de la consulta
+        query = EvaluacionTemporal.query.filter_by(id_encargado=id_encargado)
+
+        # Priorizar mes/año (nuevo esquema)
+        if periodo_mes is not None and periodo_anio is not None:
+            query = query.filter_by(periodo_mes=periodo_mes, periodo_anio=periodo_anio)
+
+        evaluacion = query.first()
 
         if evaluacion:
             db.session.delete(evaluacion)
             db.session.commit()
             return jsonify({'mensaje': 'Evaluación temporal eliminada con éxito'}), 200
         else:
-            return jsonify({'mensaje': 'No se encontró la evaluación temporal'}), 404
+            # Idempotente: no lo tratamos como error
+            return jsonify({'mensaje': 'No se encontró la evaluación temporal'}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -1634,55 +1651,51 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
         return '', 200
 
     try:
-        # 1. Verificar si el usuario tiene rol 5 (Capital Humano)
         usuario = Usuario.query.filter_by(id=usuario_id).first()
         if not usuario or usuario.rol_id not in [1, 5]:
             return jsonify({'error': 'No autorizado'}), 403
 
-        # 2. Calcular semana actual personalizada
-        def get_current_week():
-            start_date = date(2024, 12, 23)
-            today = date.today()
-            diff_days = (today - start_date).days
-            current_week = (diff_days // 7) + 1
-            return max(0, current_week - 1)
+        from app.models import EvaluacionAtrasada
+        from datetime import date
 
+        # Calcular el periodo anterior (mes pasado)
+        hoy = date.today()
+        if hoy.month == 1:
+            periodo_mes = 12
+            periodo_anio = hoy.year - 1
+        else:
+            periodo_mes = hoy.month - 1
+            periodo_anio = hoy.year
 
-        SEMANA_INICIO_REAL= 30
-        semana_actual = get_current_week()
-        # En lugar de restar las últimas 3 semanas, haz un rango desde la 30 hasta la actual - 1
-        semanas_a_verificar = list(range(SEMANA_INICIO_REAL, semana_actual))
+        evaluaciones = (
+            db.session.query(EvaluacionAtrasada, Encargado)
+            .join(Encargado, EvaluacionAtrasada.id_encargado == Encargado.id)
+            .filter(
+                EvaluacionAtrasada.activo == True,
+                EvaluacionAtrasada.periodo_mes == periodo_mes,
+                EvaluacionAtrasada.periodo_anio == periodo_anio
+            )
+            .all()
+        )
 
-        if not semanas_a_verificar:
-            return jsonify({'mensaje': 'Aún no hay semanas válidas para evaluar atrasos.'}), 200
-
-
-        # 3. Obtener solo los encargados que tienen al menos un empleado asignado
-        from app.models import EmpleadoEncargado
-        
-        encargados_con_empleados = db.session.query(Encargado).join(
-            EmpleadoEncargado, Encargado.id == EmpleadoEncargado.encargado_id
-        ).distinct().all()
+        if not evaluaciones:
+            return jsonify([]), 200
 
         evaluaciones_atrasadas = []
+        for evaluacion, encargado in evaluaciones:
+            evaluaciones_atrasadas.append({
+                "id": evaluacion.id,
+                "id_encargado": encargado.id,
+                "nombre_encargado": encargado.nombre,
+                "num_empleado": encargado.num_empleado,
+                "puesto": encargado.puesto,
+                "periodo_mes": evaluacion.periodo_mes,
+                "periodo_anio": evaluacion.periodo_anio,
+                "num_semana": evaluacion.num_semana,
+                "activo": evaluacion.activo,
+            })
 
-        for encargado in encargados_con_empleados:
-            for semana in semanas_a_verificar:
-                evaluacion = Evaluacion.query.filter_by(
-                    encargado_id=encargado.id,
-                    num_semana=semana
-                ).first()
-
-                if not evaluacion:
-                    evaluaciones_atrasadas.append({
-                        "id_encargado": encargado.id,
-                        "nombre_encargado": encargado.nombre,
-                        "num_empleado": encargado.num_empleado,
-                        "puesto": encargado.puesto,
-                        "numero_semana": semana
-                    })
-
-        return jsonify(evaluaciones_atrasadas)
+        return jsonify(evaluaciones_atrasadas), 200
 
     except Exception as e:
         logging.error(f"Error al obtener evaluaciones atrasadas: {e}", exc_info=True)
@@ -1694,24 +1707,28 @@ def liberar_evaluacion_tardia():
         data = request.get_json()
 
         id_encargado = data.get('id_encargado')
-        num_semana = data.get('num_semana')
+        periodo_mes = data.get('mes')
+        periodo_anio = data.get('anio')
+        num_semana = data.get('num_semana')  # opcional, para compatibilidad
         activo = data.get('activo', True)
 
-        if id_encargado is None or num_semana is None:
+        if id_encargado is None or periodo_mes is None or periodo_anio is None:
             return jsonify({"error": "Datos incompletos"}), 400
 
-        # 🔍 Verificar si ya existe una evaluación para ese encargado y semana
         evaluacion_existente = EvaluacionAtrasada.query.filter_by(
             id_encargado=id_encargado,
-            num_semana=num_semana
+            periodo_mes=periodo_mes,
+            periodo_anio=periodo_anio
         ).first()
 
         if evaluacion_existente:
-            return jsonify({"mensaje": "Ya existe una evaluación atrasada para este encargado y semana"}), 200
+            return jsonify({"mensaje": "Ya existe una evaluación atrasada para este encargado y periodo"}), 200
 
         nueva_evaluacion = EvaluacionAtrasada(
             id_encargado=id_encargado,
-            num_semana=num_semana,
+            num_semana=num_semana if num_semana is not None else 0,
+            periodo_mes=periodo_mes,
+            periodo_anio=periodo_anio,
             activo=activo
         )
 
@@ -1734,21 +1751,21 @@ def finalizar_evaluacion_atrasda_delEncargado():
         data = request.get_json()
 
         id_encargado = data.get('id_encargado')
-        num_semana = data.get('num_semana')
+        periodo_mes = data.get('mes')
+        periodo_anio = data.get('anio')
 
-        if id_encargado is None or num_semana is None:
+        if id_encargado is None or periodo_mes is None or periodo_anio is None:
             return jsonify({"error": "Datos incompletos"}), 400
 
-        # Buscar la evaluación atrasada
         evaluacion_atrasada = EvaluacionAtrasada.query.filter_by(
             id_encargado=id_encargado,
-            num_semana=num_semana
+            periodo_mes=periodo_mes,
+            periodo_anio=periodo_anio
         ).first()
 
         if not evaluacion_atrasada:
             return jsonify({"error": "Evaluación atrasada no encontrada"}), 404
 
-        # Marcar como finalizada
         evaluacion_atrasada.activo = False
         db.session.commit()
 
@@ -1770,17 +1787,35 @@ def obtener_evaluaciones_tardias_encargado(encargado_id):
         if not encargado:
             return jsonify({'error': 'Encargado no encontrado'}), 404
         
-        # Obtener las evaluaciones atrasadas del encargado
-        evaluaciones_tardias = EvaluacionAtrasada.query.filter_by(id_encargado=encargado_id).all()
-        if not evaluaciones_tardias:
-            return jsonify({'mensaje': 'No hay evaluaciones atrasadas para este encargado'}), 404
+        # Validar si el encargado tiene empleados asignados
+        from app.models import EmpleadoEncargado
+        tiene_empleados = EmpleadoEncargado.query.filter_by(encargado_id=encargado_id).first()
         
-        # Formatear la respuesta
+        if not tiene_empleados:
+            return jsonify({
+                'encargado_id': encargado.id,
+                'encargado_nombre': encargado.nombre,
+                'mensaje': 'Este encargado no tiene empleados asignados, no aplica para evaluaciones atrasadas.',
+                'evaluaciones_tardias': []
+            }), 200
+
+        evaluaciones_tardias = EvaluacionAtrasada.query.filter_by(id_encargado=encargado_id).all()
+        
+        if not evaluaciones_tardias:
+            return jsonify({
+                'encargado_id': encargado.id,
+                'encargado_nombre': encargado.nombre,
+                'mensaje': 'No hay evaluaciones atrasadas',
+                'evaluaciones_tardias': []
+            }), 200
+        
         response_data = []
         for evaluacion in evaluaciones_tardias:
             response_data.append({
                 'id': evaluacion.id,
                 'id_encargado': evaluacion.id_encargado,
+                'periodo_mes': evaluacion.periodo_mes,
+                'periodo_anio': evaluacion.periodo_anio,
                 'num_semana': evaluacion.num_semana,
                 'activo': evaluacion.activo
             })
