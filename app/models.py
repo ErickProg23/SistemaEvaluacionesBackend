@@ -299,4 +299,47 @@ class TarifaHabitacion(db.Model):
 
     def __repr__(self):
         return f'<TarifaHabitacion {self.nombre}: {self.precio_mxn}>'
+
+class MensajeTicket(db.Model):
+    __tablename__ = 'mensajes_ticket'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    mensaje = db.Column(db.Text, nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.now)
+
+    # Relaciones (para poder acceder al nombre del usuario fácilmente)
+    usuario_rel = db.relationship('Usuario', backref='mensajes_enviados')
+    ticket_rel = db.relationship('Ticket', backref='mensajes')
+
+    def __repr__(self):
+        return f'<MensajeTicket ID: {self.id}, Ticket ID: {self.ticket_id}, Usuario ID: {self.usuario_id}, Mensaje: {self.mensaje}, Fecha: {self.fecha}>'
     
+class NotificacionTicket(db.Model):
+    __tablename__ = 'notificaciones_tickets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'), nullable=False)
+    cantidad_mensajes = db.Column(db.Integer, default=1)
+    ultimo_mensaje = db.Column(db.String(255)) # Limitamos longitud para preview
+    fecha_actualizacion = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    leido = db.Column(db.Boolean, default=False)
+
+    # Relaciones
+    usuario_rel = db.relationship('Usuario', backref=db.backref('notificaciones_tickets', lazy=True))
+    ticket_rel = db.relationship('Ticket', backref=db.backref('notificaciones_usuarios', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'usuario_id': self.usuario_id,
+            'ticket_id': self.ticket_id,
+            'ticket_titulo': self.ticket_rel.titulo if self.ticket_rel else 'Ticket',
+            'cantidad_mensajes': self.cantidad_mensajes,
+            'ultimo_mensaje': self.ultimo_mensaje,
+            'fecha': self.fecha_actualizacion.isoformat(),
+            'leido': self.leido,
+            'tipo': 'ticket_chat' # Útil para distinguir en el frontend
+        }

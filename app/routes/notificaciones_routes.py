@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, Response, stream_with_context
-from app.models import Empleado, Encargado, Usuario, Pregunta, Notificacion
+from app.models import Empleado, Encargado, Usuario, Pregunta, Notificacion, NotificacionTicket, Ticket, MensajeTicket
 from app import db
 from sqlalchemy import update
 from datetime import datetime, timedelta
@@ -201,19 +201,40 @@ def eliminar_notificacion():
 @notis_bp.route('/notificaciones', methods=['OPTIONS', 'GET'])
 def obtener_notificaciones():
 
-    encargado_id = request.args.get('encargado_id', type=int)
-    if not encargado_id:
-        return jsonify({'error': 'Falta el parámetro encargado_id'}), 400
+    encargado_id = request.args.get('encargado_id')
+    usuario_id = request.args.get('usuario_id')
+    
+    # Normalizar valores "null" string que a veces envían los frontends
+    if encargado_id == 'null' or encargado_id == 'undefined':
+        encargado_id = None
+    if usuario_id == 'null' or usuario_id == 'undefined':
+        usuario_id = None
+
+    if not encargado_id and not usuario_id:
+        return jsonify({'error': 'Falta el parámetro encargado_id o usuario_id'}), 400
+
+    # Convertir a int si existen
+    if encargado_id: encargado_id = int(encargado_id)
+    if usuario_id: usuario_id = int(usuario_id)
+
+    target_ids = []
+    if encargado_id:
+        target_ids.append(encargado_id)
+    # Si se envía usuario_id, también buscamos notificaciones dirigidas a ese ID
+    # (ya que en tickets guardamos usuario_id en el campo id_encargado para admins)
+    if usuario_id:
+        target_ids.append(usuario_id)
 
     fecha_limite = datetime.utcnow() - timedelta(days=60) # 60 dias atras desde hoy
 
     notificaciones = Notificacion.query.filter(
-        Notificacion.id_encargado == encargado_id,
+        Notificacion.id_encargado.in_(target_ids),
         Notificacion.fecha >= fecha_limite
     ).all()
 
     if not notificaciones:
-        return jsonify({'message': 'No hay notificaciones'}), 404
+        # Retornar lista vacía en lugar de 404 para evitar errores en frontend
+        return jsonify({'notificaciones': []}), 200
 
     notificaciones_data = []
     for notificacion in notificaciones:

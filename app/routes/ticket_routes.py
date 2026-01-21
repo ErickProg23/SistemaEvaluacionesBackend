@@ -1,12 +1,14 @@
 import os
 from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
-from app.models import Ticket, db
+from app.models import Ticket, db, MensajeTicket, NotificacionTicket
+from sqlalchemy import or_
 import threading
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from app.utils import enviar_correo
+
 
 tickets_bp = Blueprint('tickets_bp', __name__)
 
@@ -218,7 +220,10 @@ def obtener_tickets():
 
     # Consulta
     tickets = Ticket.query.filter(
-        db.func.lower(Ticket.departamento) == normalizar(departamento_objetivo)
+        or_(
+            db.func.lower(Ticket.departamento) == normalizar(departamento_objetivo),
+            Ticket.usuario_id == usuario_id
+        )
     ).all()
 
     # Respuesta
@@ -435,3 +440,123 @@ def cambiar_estado_ticket():
             'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None
         }
     }), 200
+
+# 1. Obtener mensajes
+@tickets_bp.route('/<int:ticket_id>/mensajes', methods=['GET'])
+def obtener_mensajes(ticket_id):
+    # Asumiendo una tabla 'mensajes_ticket'
+    mensajes = MensajeTicket.query.filter_by(ticket_id=ticket_id).order_by(MensajeTicket.fecha.asc()).all()
+    resultado = []
+    for m in mensajes:
+        resultado.append({
+            'id': m.id,
+            'mensaje': m.mensaje,
+            'fecha': m.fecha.isoformat(),
+            'usuario_id': m.usuario_id,
+            'usuario_nombre': m.usuario_rel.nombre if m.usuario_rel else 'Desconocido'
+        })
+    return jsonify(resultado), 200
+
+# 2. Enviar mensaje
+@tickets_bp.route('/<int:ticket_id>/mensajes', methods=['POST'])
+def enviar_mensaje(ticket_id):
+    try:
+        data = request.get_json()
+        sender_id = data.get('usuario_id')
+        mensaje_texto = data.get('mensaje')
+
+        if not sender_id or not mensaje_texto:
+             return jsonify({'error': 'Datos incompletos'}), 400
+
+        # 1. Guardar mensaje
+        nuevo_mensaje = MensajeTicket(
+            ticket_id=ticket_id,
+            usuario_id=sender_id,
+            mensaje=mensaje_texto,
+            fecha=datetime.now()
+        )
+        db.session.add(nuevo_mensaje)
+
+        # 2. GESTIÓN DE NOTIFICACIÓN TICKET
+        ticket = Ticket.query.get(ticket_id)
+        if ticket:
+            # Lógica para determinar quién recibe la notificación
+            destinatario_id = None
+            if sender_id == ticket.usuario_id:
+                # Creador escribe -> Notificar a encargado asignado (si hay)
+                if ticket.asignado_a:
+                    # OJO: Aquí asumo que ticket.asignado_a es un ID de Usuario válido. 
+                    # Si 'asignado_a' es ID de empleado y no usuario, necesitarás mapearlo.
+                    # Asumiré que tus encargados son Usuarios del sistema.
+                    destinatario_id = ticket.asignado_a 
+            else:
+                # Encargado (u otro) escribe -> Notificar al creador
+                destinatario_id = ticket.usuario_id
+
+            if destinatario_id:
+                # Buscar notificación existente
+                notif = NotificacionTicket.query.filter_by(
+                    usuario_id=destinatario_id,
+                    ticket_id=ticket_id
+                ).first()
+
+                preview = mensaje_texto[:50] + '...' if len(mensaje_texto) > 50 else mensaje_texto
+
+                if notif:
+                    # Ya existe: Actualizar
+                    if notif.leido:
+                        # Si ya estaba leída, la "revivimos" como nueva
+                        notif.leido = False
+                        notif.cantidad_mensajes = 1
+                    else:
+                        # Si no estaba leída, acumulamos
+                        notif.cantidad_mensajes += 1
+                    
+                    notif.ultimo_mensaje = preview
+                    notif.fecha_actualizacion = datetime.now()
+                else:
+                    # No existe: Crear nueva
+                    nueva_notif = NotificacionTicket(
+                        usuario_id=destinatario_id,
+                        ticket_id=ticket_id,
+                        cantidad_mensajes=1,
+                        ultimo_mensaje=preview,
+                        leido=False,
+                        fecha_actualizacion=datetime.now()
+                    )
+                    db.session.add(nueva_notif)
+
+        db.session.commit()
+        return jsonify({'message': 'Mensaje enviado'}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error enviando mensaje: {e}") # Log para debug
+        return jsonify({'error': str(e)}), 500
+
+@tickets_bp.route('/notificaciones-chat', methods=['GET'])
+def obtener_notificaciones_chat():
+    try:
+        usuario_id = request.args.get('usuario_id', type=int)
+        if not usuario_id:
+            return jsonify({'error': 'Falta usuario_id'}), 400
+        
+        notifs = NotificacionTicket.query.filter_by(usuario_id=usuario_id).order_by(NotificacionTicket.fecha_actualizacion.desc()).all()
+        
+        return jsonify([n.to_dict() for n in notifs]), 200
+    except Exception as e:
+        current_app.logger.error(f"Error obteniendo notificaciones chat: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Marcar notificación como leída (cuando entra al chat)
+@tickets_bp.route('/notificaciones-chat/<int:notif_id>/leer', methods=['POST'])
+def leer_notificacion_chat(notif_id):
+    try:
+        notif = NotificacionTicket.query.get(notif_id)
+        if notif:
+            notif.leido = True
+            db.session.commit()
+            return jsonify({'message': 'Leída'}), 200
+        return jsonify({'error': 'No encontrada'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
