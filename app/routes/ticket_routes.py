@@ -83,7 +83,8 @@ def crear_ticket():
             'ayb': 'AyB',
             'recepcion': 'Jefe de Recepción', # o similar
             'eventos': 'Ventas',
-            'administracion': 'Administrador'
+            'administracion': 'Administrador',
+            'capital humano': 'Capital humano'
         }
 
         destinatarios_ids = []
@@ -98,6 +99,19 @@ def crear_ticket():
                 Encargado.activo == True
             ).all()
             destinatarios_ids = [e.id for e in encargados]
+            
+        # Caso especial: Capital Humano (rol_id=5) si no se encontró encargado
+        if dep_key == 'capital humano' and not destinatarios_ids:
+            usuarios_rh = Usuario.query.filter_by(rol_id=5, activo=True).all()
+            # Necesitamos IDs de "Encargado" para la tabla notificaciones (id_encargado),
+            # pero estos usuarios no están en tabla Encargado.
+            # LA TABLA notificaciones REQUIERE id_encargado (FK).
+            # Si no existe registro en Encargado, no podemos insertar en 'notificaciones' con id_encargado.
+            # Solución: Solo enviar correo (ya manejado abajo) o requerir que existan en Encargado.
+            # OJO: Si el sistema de notificaciones SSE usa id_encargado, estos usuarios NO recibirán SSE
+            # a menos que insertemos un registro dummy en Encargado o modifiquemos el modelo.
+            # Por ahora, omitimos SSE para ellos si no tienen ID de Encargado, para evitar error de FK.
+            pass
 
         # Crear notificaciones
         # NOTA: id_empleado es obligatorio en tu modelo. Usaremos un valor dummy (ej. 1) 
@@ -195,7 +209,8 @@ def obtener_tickets():
         'ayb': 'AyB',
         'jefe de recepción': 'Recepcion',
         'ventas': 'Eventos',
-        'administrador': 'Administracion'
+        'administrador': 'Administracion',
+        'capital humano': 'Capital Humano'
     }
 
     def normalizar(s):
@@ -208,9 +223,13 @@ def obtener_tickets():
     encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
     if encargado:
         dept_autorizado = puesto_a_departamento.get(normalizar(encargado.puesto))
+    elif usuario.rol_id == 5:
+        # Caso especial: Capital Humano (Rol 5)
+        dept_autorizado = 'Capital Humano'
     else:
         # Fallback para usuarios visualizadores (no encargados): por nombre de usuario
         try:
+            # Si existe la variable global o importada
             dept_autorizado = visualizador_nombre_a_departamento.get(normalizar(usuario.nombre))
         except NameError:
             dept_autorizado = None
