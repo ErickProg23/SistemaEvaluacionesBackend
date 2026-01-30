@@ -13,11 +13,11 @@ from app.utils import enviar_correo
 tickets_bp = Blueprint('tickets_bp', __name__)
 
 DEPARTAMENTO_DESTINATARIOS = {
-    'sistemas': ['soportesistemas@estacioneslapopular.com'],
+    'sistemas': ['sistemas.sl@araizahoteles.com'],
     'mantenimiento': ['mantenimientosanluis@araizahoteles.com'],
     'ama de llaves': ['amadellaves.sanluis@araizahoteles.com'],
     'seguridad': ['sehsl@araizahoteles.com'],
-    'ayb': [''],
+    'ayb': ['aybsanluis@araizahoteles.com'],
     'recepcion': ['recepcionsanluis@araizahoteles.com']
 }
 
