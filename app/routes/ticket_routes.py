@@ -17,7 +17,7 @@ DEPARTAMENTO_DESTINATARIOS = {
     'mantenimiento': ['mantenimientosanluis@araizahoteles.com'],
     'ama de llaves': ['amadellaves.sanluis@araizahoteles.com'],
     'seguridad': ['sehsl@araizahoteles.com'],
-    'ayb': ['aybsanluis@araizahoteles.com'],
+    'ayb': [''],
     'recepcion': ['recepcionsanluis@araizahoteles.com']
 }
 
@@ -30,6 +30,8 @@ def crear_ticket():
     titulo = (data.get('titulo') or '').strip()
     descripcion = (data.get('descripcion') or '').strip()
     departamento = (data.get('departamento') or '').strip()
+    area = (data.get('area') or '').strip() or None  # Opcional, guardar como NULL si está vacío
+    categoria = (data.get('categoria') or '').strip() or None  # Opcional, guardar como NULL si está vacío
 
     # usuario_id puede venir en form-data o también en query; tomar cualquiera
     usuario_id_raw = data.get('usuario_id') or request.args.get('usuario_id')
@@ -56,6 +58,8 @@ def crear_ticket():
         titulo=titulo,
         descripcion=descripcion,
         departamento=departamento,
+        area=area,
+        categoria=categoria,
         estado='Abierto',
         usuario_id=usuario_id
     )
@@ -72,6 +76,7 @@ def crear_ticket():
         # Mapa de departamento -> Puesto de Encargado (aproximado según lógica de obtener_tickets)
         # Ajusta estas claves según los nombres reales en tu DB
         mapa_dept_puesto = {
+            'sistemas': 'Encargado Sistemas',
             'mantenimiento': 'Encargado Mantenimiento',
             'ama de llaves': 'Ama de Llaves',
             'seguridad': 'Seguridad y Bienestar',
@@ -82,20 +87,15 @@ def crear_ticket():
         destinatarios_ids = []
         dep_key = (departamento or '').strip().lower()
 
-        if dep_key == 'sistemas':
-            # Notificar a todos los administradores de sistemas (rol_id = 1)
-            admins = Usuario.query.filter_by(rol_id=1, activo=True).all()
-            destinatarios_ids = [u.id for u in admins]
-        else:
-            # Buscar encargados que coincidan con el puesto del departamento
-            puesto_target = mapa_dept_puesto.get(dep_key)
-            if puesto_target:
-                # Búsqueda laxa por nombre de puesto (contains)
-                encargados = Encargado.query.filter(
-                    Encargado.puesto.ilike(f"%{puesto_target}%"),
-                    Encargado.activo == True
-                ).all()
-                destinatarios_ids = [e.id for e in encargados]
+        # Buscar encargados que coincidan con el puesto del departamento
+        puesto_target = mapa_dept_puesto.get(dep_key)
+        if puesto_target:
+            # Búsqueda laxa por nombre de puesto (contains)
+            encargados = Encargado.query.filter(
+                Encargado.puesto.ilike(f"%{puesto_target}%"),
+                Encargado.activo == True
+            ).all()
+            destinatarios_ids = [e.id for e in encargados]
 
         # Crear notificaciones
         # NOTA: id_empleado es obligatorio en tu modelo. Usaremos un valor dummy (ej. 1) 
@@ -135,6 +135,9 @@ def crear_ticket():
                 f"Se ha creado un nuevo ticket:\n\n"
                 f"Título: {titulo}\n"
                 f"Descripción: {descripcion}\n"
+                f"Departamento: {departamento}\n"
+                f"Área: {area or 'N/A'}\n"
+                f"Categoría: {categoria or 'N/A'}\n"
                 f"Creado por: {nuevo_ticket.usuario_rel.nombre}\n"
                 f"Estado: Abierto\n"
                 f"Fecha de creación: {fecha_str}\n"
@@ -147,6 +150,9 @@ def crear_ticket():
                 <ul>
                     <li><strong>Título:</strong> {titulo}</li>
                     <li><strong>Descripción:</strong> {descripcion}</li>
+                    <li><strong>Departamento:</strong> {departamento}</li>
+                    <li><strong>Área:</strong> {area or 'N/A'}</li>
+                    <li><strong>Categoría:</strong> {categoria or 'N/A'}</li>
                     <li><strong>Creado por:</strong> {nuevo_ticket.usuario_rel.nombre}</li>
                     <li><strong>Estado:</strong> Abierto</li>
                     <li><strong>Fecha de creación:</strong> {fecha_str}</li>
@@ -180,6 +186,7 @@ def obtener_tickets():
 
     # Mapeo de puesto → departamento destino (para encargados)
     puesto_a_departamento = {
+        'encargado sistemas': 'Sistemas',
         'encargado mantenimiento': 'Mantenimiento',
         'ama de llaves': 'Ama de llaves',
         'seguridad y bienestar': 'Seguridad',
@@ -192,17 +199,17 @@ def obtener_tickets():
 
     # Determinar el departamento autorizado por el usuario
     dept_autorizado = None
-    if usuario.rol_id == 1:
-        # Rol Sistemas: solo ve tickets del departamento Sistemas (igual que tu lógica actual)
-        dept_autorizado = 'Sistemas'
+
+    # Intentar por encargado asociado
+    encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
+    if encargado:
+        dept_autorizado = puesto_a_departamento.get(normalizar(encargado.puesto))
     else:
-        # Intentar por encargado asociado
-        encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
-        if encargado:
-            dept_autorizado = puesto_a_departamento.get(normalizar(encargado.puesto))
-        else:
-            # Fallback para usuarios visualizadores (no encargados): por nombre de usuario
+        # Fallback para usuarios visualizadores (no encargados): por nombre de usuario
+        try:
             dept_autorizado = visualizador_nombre_a_departamento.get(normalizar(usuario.nombre))
+        except NameError:
+            dept_autorizado = None
 
     # Si el cliente pide un departamento específico, validarlo contra el autorizado
     if departamento_param:
@@ -234,6 +241,8 @@ def obtener_tickets():
             'titulo': ticket.titulo,
             'descripcion': ticket.descripcion,
             'departamento': getattr(ticket, 'departamento', None),
+            'area': getattr(ticket, 'area', None),
+            'categoria': getattr(ticket, 'categoria', None),
             'estado': ticket.estado,
             'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
             'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
@@ -283,6 +292,8 @@ def obtener_tickets_por_departamento():
             'titulo': ticket.titulo,
             'descripcion': ticket.descripcion,
             'departamento': getattr(ticket, 'departamento', None),
+            'area': getattr(ticket, 'area', None),
+            'categoria': getattr(ticket, 'categoria', None),
             'estado': ticket.estado,
             'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
             'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
@@ -330,6 +341,8 @@ def detalle_ticket(ticket_id):
         'titulo': ticket.titulo,
         'descripcion': ticket.descripcion,
         'departamento': ticket.departamento,
+        'area': getattr(ticket, 'area', None),
+        'categoria': getattr(ticket, 'categoria', None),
         'estado': ticket.estado,
         'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
         'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None
@@ -480,27 +493,54 @@ def enviar_mensaje(ticket_id):
         # 2. GESTIÓN DE NOTIFICACIÓN TICKET
         ticket = Ticket.query.get(ticket_id)
         if ticket:
-            # Lógica para determinar quién recibe la notificación
-            destinatario_id = None
+            from app.models import Encargado
+            
+            destinatarios_ids = []
+
             if sender_id == ticket.usuario_id:
-                # Creador escribe -> Notificar a encargado asignado (si hay)
-                if ticket.asignado_a:
-                    # OJO: Aquí asumo que ticket.asignado_a es un ID de Usuario válido. 
-                    # Si 'asignado_a' es ID de empleado y no usuario, necesitarás mapearlo.
-                    # Asumiré que tus encargados son Usuarios del sistema.
-                    destinatario_id = ticket.asignado_a 
+                # Creador escribe -> Notificar SIEMPRE a los encargados del departamento
+                # (Ignoramos a quién esté asignado el ticket, siempre notificamos a los encargados)
+                mapa_dept_puesto = {
+                    'sistemas': 'Encargado Sistemas',
+                    'mantenimiento': 'Encargado Mantenimiento',
+                    'ama de llaves': 'Ama de Llaves',
+                    'seguridad': 'Seguridad y Bienestar',
+                    'ayb': 'AyB',
+                    'recepcion': 'Jefe de Recepción',
+                    'eventos': 'Ventas'
+                }
+                
+                dep_key = (ticket.departamento or '').strip().lower()
+                puesto_target = mapa_dept_puesto.get(dep_key)
+                
+                if puesto_target:
+                    encargados = Encargado.query.filter(
+                        Encargado.puesto.ilike(f"%{puesto_target}%"),
+                        Encargado.activo == True
+                    ).all()
+                    # Agregar los IDs de usuario de los encargados encontrados
+                    for enc in encargados:
+                        if enc.usuario_id:
+                            destinatarios_ids.append(enc.usuario_id)
             else:
                 # Encargado (u otro) escribe -> Notificar al creador
-                destinatario_id = ticket.usuario_id
+                destinatarios_ids.append(ticket.usuario_id)
 
-            if destinatario_id:
-                # Buscar notificación existente
+            # Limpiar lista: eliminar duplicados y evitar notificarse a sí mismo
+            destinatarios_ids = list(set(destinatarios_ids))
+            if sender_id in destinatarios_ids:
+                destinatarios_ids.remove(sender_id)
+
+            preview = mensaje_texto[:50] + '...' if len(mensaje_texto) > 50 else mensaje_texto
+
+            for dest_id in destinatarios_ids:
+                if not dest_id: continue
+
+                # Buscar notificación existente para este usuario y ticket
                 notif = NotificacionTicket.query.filter_by(
-                    usuario_id=destinatario_id,
+                    usuario_id=dest_id,
                     ticket_id=ticket_id
                 ).first()
-
-                preview = mensaje_texto[:50] + '...' if len(mensaje_texto) > 50 else mensaje_texto
 
                 if notif:
                     # Ya existe: Actualizar
@@ -517,7 +557,7 @@ def enviar_mensaje(ticket_id):
                 else:
                     # No existe: Crear nueva
                     nueva_notif = NotificacionTicket(
-                        usuario_id=destinatario_id,
+                        usuario_id=dest_id,
                         ticket_id=ticket_id,
                         cantidad_mensajes=1,
                         ultimo_mensaje=preview,

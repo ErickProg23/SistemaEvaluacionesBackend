@@ -152,11 +152,12 @@ class Evaluacion(db.Model):
     ausente = db.Column(db.Boolean, default=True)
     a_tiempo = db.Column(db.Boolean, default=True)
     tipo_evaluacion = db.Column(db.Integer, nullable=False)
+    num_semana = db.Column(db.Integer, nullable=False, default=0)
     periodo_anio = db.Column(db.Integer, nullable=False)
-    periodo_mes = db.Column(db.Integer, nullable=False)
+    periodo_mes = db.Column(db.Integer, nullable=True)
     
     def __repr__(self):
-        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje_total}, aTiempo: {self.a_tiempo}, TipSemana: {self.tipo_evaluacion}, Anio: {self.periodo_anio}, Mes: {self.periodo_mes}>'
+        return f'<Evaluacion ID: {self.id}, Empleado ID: {self.empleado_id}, Encargado ID: {self.encargado_id}, Total Puntos: {self.total_puntos}, Porcentaje: {self.porcentaje_total}, aTiempo: {self.a_tiempo}, TipSemana: {self.tipo_evaluacion},NumSemana: {self.num_semana}, Anio: {self.periodo_anio}, Mes: {self.periodo_mes}>'
 
 class Evaluacion_Encargado(db.Model):
     __tablename__='evaluacion_encargado'
@@ -267,6 +268,8 @@ class Ticket(db.Model):
     titulo = db.Column(db.String(45), nullable=False)
     descripcion = db.Column(db.Text, nullable=False)
     departamento = db.Column(db.String(255), nullable=False)
+    area = db.Column(db.String(255), nullable=False)
+    categoria = db.Column(db.String(255), nullable=False)
     estado = db.Column(db.String(45), nullable=False, default='Abierto')  # Estado del ticket, por defecto 'Abierto'
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
