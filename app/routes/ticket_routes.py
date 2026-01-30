@@ -81,7 +81,9 @@ def crear_ticket():
             'ama de llaves': 'Ama de Llaves',
             'seguridad': 'Seguridad y Bienestar',
             'ayb': 'AyB',
-            'recepcion': 'Jefe de Recepción' # o similar
+            'recepcion': 'Jefe de Recepción', # o similar
+            'eventos': 'Ventas',
+            'administracion': 'Administrador'
         }
 
         destinatarios_ids = []
@@ -191,7 +193,9 @@ def obtener_tickets():
         'ama de llaves': 'Ama de llaves',
         'seguridad y bienestar': 'Seguridad',
         'ayb': 'AyB',
-        'jefe de recepción': 'Recepcion'
+        'jefe de recepción': 'Recepcion',
+        'ventas': 'Eventos',
+        'administrador': 'Administracion'
     }
 
     def normalizar(s):
