@@ -200,7 +200,7 @@ def obtener_tickets():
     if not usuario:
         return jsonify({'error': 'Usuario no encontrado'}), 404
 
-    # Mapeo de puesto → departamento destino (para encargados)
+    # Mapeo de puesto -> departamento destino (para encargados)
     puesto_a_departamento = {
         'encargado sistemas': 'Sistemas',
         'encargado mantenimiento': 'Mantenimiento',
@@ -214,25 +214,47 @@ def obtener_tickets():
     }
 
     def normalizar(s):
-        return s.strip().lower() if isinstance(s, str) else ''
+        val = s.strip().lower() if isinstance(s, str) else ''
+        # print(f"Normalizando: '{s}' -> '{val}'")
+        return val
 
     # Determinar el departamento autorizado por el usuario
+    rol_nombre_norm = normalizar(usuario.rol.nombre) if getattr(usuario, 'rol', None) else ''
     dept_autorizado = None
 
     # Intentar por encargado asociado
     encargado = Encargado.query.filter(Encargado.usuario_id == usuario_id).first()
     if encargado:
         dept_autorizado = puesto_a_departamento.get(normalizar(encargado.puesto))
-    elif usuario.rol_id == 5:
-        # Caso especial: Capital Humano (Rol 5)
+    elif rol_nombre_norm == 'rh':
         dept_autorizado = 'Capital Humano'
+    elif rol_nombre_norm in ('general', 'visualizador'):
+        # Caso especial: Empleados visualizadores (Rol 6)
+        # Mapeo de nombre de usuario -> departamento
+        # Normalizamos el nombre del usuario eliminando "de " para evitar problemas
+        nombre_normalizado = normalizar(usuario.nombre).replace('de ', '').replace('  ', ' ')
+        
+        visualizador_nombre_a_departamento = {
+            'ama llaves': 'Ama de llaves',
+            'mantenimiento': 'Mantenimiento',
+            # Agregar otros usuarios visualizadores aquí si es necesario
+        }
+        
+        # Intentamos buscar con la clave normalizada (sin 'de')
+        dept_autorizado = visualizador_nombre_a_departamento.get(nombre_normalizado)
+        
+        # Si no funciona, intentamos con el nombre original normalizado (por si acaso)
+        if not dept_autorizado:
+             visualizador_nombre_a_departamento_full = {
+                'ama llaves': 'Ama de llaves',
+                'ama de llaves': 'Ama de llaves',
+                'mantenimiento': 'Mantenimiento',
+            }
+             dept_autorizado = visualizador_nombre_a_departamento_full.get(normalizar(usuario.nombre))
     else:
-        # Fallback para usuarios visualizadores (no encargados): por nombre de usuario
-        try:
-            # Si existe la variable global o importada
-            dept_autorizado = visualizador_nombre_a_departamento.get(normalizar(usuario.nombre))
-        except NameError:
-            dept_autorizado = None
+        # Fallback para otros casos o si no se encontró en los anteriores
+        dept_autorizado = None
+
 
     # Si el cliente pide un departamento específico, validarlo contra el autorizado
     if departamento_param:
@@ -248,13 +270,44 @@ def obtener_tickets():
             return jsonify({'error': 'No se determinó el departamento autorizado para el usuario'}), 400
         departamento_objetivo = dept_autorizado
 
-    # Consulta
-    tickets = Ticket.query.filter(
-        or_(
-            db.func.lower(Ticket.departamento) == normalizar(departamento_objetivo),
-            Ticket.usuario_id == usuario_id
-        )
-    ).all()
+    # --- LÓGICA AMPLIADA PARA VISUALIZADORES ---
+    # Además de ver tickets del departamento, deben ver tickets CREADOS por el Encargado de ese departamento.
+    # (Ej. Ama de llaves debe ver lo que reportó su jefa a Mantenimiento)
+    ids_creadores_adicionales = []
+    
+    try:
+        # 1. Identificar el puesto del Encargado basado en el departamento objetivo
+        puesto_encargado_target = None
+        target_dept_norm = normalizar(departamento_objetivo)
+        
+        for puesto, dept in puesto_a_departamento.items():
+            if normalizar(dept) == target_dept_norm:
+                puesto_encargado_target = puesto
+                break
+        
+        # 2. Si encontramos el puesto, buscar al usuario Encargado
+        if puesto_encargado_target:
+            # Usamos ilike con comodines para mayor flexibilidad (ej. "Ama de llaves" coincida con "Encargada Ama de llaves")
+            encargado_dept = Encargado.query.filter(Encargado.puesto.ilike(f"%{puesto_encargado_target}%")).first()
+            if encargado_dept:
+                ids_creadores_adicionales.append(encargado_dept.usuario_id)
+                print(f"Incluyendo tickets creados por Encargado: {encargado_dept.puesto} (ID: {encargado_dept.usuario_id})")
+    except Exception as e:
+        print(f"Error buscando encargado para tickets salientes: {e}")
+
+    # Consulta Final
+    criteria = [
+        Ticket.departamento.ilike(f"%{departamento_objetivo}%"), # Tickets RECIBIDOS en el depto
+        Ticket.usuario_id == usuario_id # Tickets creados por MÍ (el usuario actual)
+    ]
+    
+    # Agregar tickets creados por el JEFE del depto (Tickets SALIENTES del depto)
+    if ids_creadores_adicionales:
+        criteria.append(Ticket.usuario_id.in_(ids_creadores_adicionales))
+
+    tickets = Ticket.query.filter(or_(*criteria)).all()
+    
+    print(f"Total tickets encontrados: {len(tickets)}")
 
     # Respuesta
     resultado = []

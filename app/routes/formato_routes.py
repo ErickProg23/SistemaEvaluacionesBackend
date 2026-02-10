@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import letter
 from flask import Blueprint, make_response, render_template, request, jsonify, send_file, send_from_directory
 from app.models import Empleado, Encargado, Formato, Usuario
-from weasyprint import HTML, CSS
+ 
 
 
 # Definición del Blueprint para las rutas de obtención de datos
@@ -106,7 +106,6 @@ def imprimir_pdf_medida_disciplinaria():
     if not departamento or departamento.lower() in ['undefined', 'null', 'none', '']:
         departamento = puestos_a_departamentos.get(puesto, 'Departamento Desconocido')
 
-    # Renderizar HTML con Jinja2
     html_out = render_template('Medida disciplinaria.html',
                                nombre_empleado=nombre,
                                num_empleado=num_emp,
@@ -114,13 +113,26 @@ def imprimir_pdf_medida_disciplinaria():
                                departamento=departamento,
                                fecha=fecha)
 
-    # Convertir HTML a PDF con WeasyPrint
-    pdf = HTML(string=html_out).write_pdf()
+    try:
+        from weasyprint import HTML, CSS
+        pdf = HTML(string=html_out).write_pdf()
+    except Exception:
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(72, 740, "Medida disciplinaria")
+        c.setFont("Helvetica", 12)
+        c.drawString(72, 700, f"Nombre: {nombre or ''}")
+        c.drawString(72, 680, f"Número de empleado: {num_emp or ''}")
+        c.drawString(72, 660, f"Puesto: {puesto or ''}")
+        c.drawString(72, 640, f"Departamento: {departamento or ''}")
+        c.drawString(72, 620, f"Fecha: {fecha}")
+        c.showPage()
+        c.save()
+        pdf = buffer.getvalue()
 
-    # Crear respuesta PDF
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
-    # inline para abrir en navegador, attachment para forzar descarga
     response.headers['Content-Disposition'] = 'inline; filename=medida_disciplinaria.pdf'
 
     return response
