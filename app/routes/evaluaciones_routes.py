@@ -710,52 +710,44 @@ def obtener_evaluaciones_filtradas():
                 return jsonify({'error': 'El año debe ser un número entero'}), 400
 
         # 3. Filtro por Periodo (Mensual)
-        if periodo_tipo == 'mensual' and periodo_valor:
+        tipo = (periodo_tipo or '').strip().lower()
+        if tipo in ('mensual', 'month', 'mes'):
+            if not periodo_valor or not anio:
+                return jsonify({'error': 'Se requieren periodo_valor (mes) y anio para filtro mensual exacto'}), 400
             try:
-                mes_objetivo = int(periodo_valor) # El mes que el usuario QUIERE VER (ej: 12 - Diciembre)
-                anio_objetivo = int(anio)        # El año que el usuario QUIERE VER (ej: 2024)
-                
-                # Calcular fecha de evaluación esperada para el fallback (mes siguiente)
-                # Si busco Diciembre (12) del 2024 -> Se evaluó en Enero (1) del 2025
-                if mes_objetivo == 12:
-                    mes_evaluacion_fallback = 1
-                    anio_evaluacion_fallback = anio_objetivo + 1
-                else:
-                    mes_evaluacion_fallback = mes_objetivo + 1
-                    anio_evaluacion_fallback = anio_objetivo
+                mes_objetivo = int(periodo_valor)
+                anio_objetivo = int(anio)
+                from datetime import date
+                from calendar import monthrange
 
-                # Construir filtro complejo
-                filtro_mes_complejo = or_(
-                    # CASO A: Tienen columnas explicitas (NUEVOS REGISTROS)
-                    # Simplemente coinciden con lo que se pide.
-                    and_(
-                        Evaluacion.periodo_mes == mes_objetivo,
-                        Evaluacion.periodo_anio == anio_objetivo
-                    ),
-                    
-                    # CASO B: Son registros viejos (NULL/0) -> Usar lógica de "Mes Vencido"
-                    and_(
-                        or_(Evaluacion.periodo_mes == 0, Evaluacion.periodo_mes == None),
-                        # Verificamos que la FECHA REAL de evaluación sea el mes SIGUIENTE
-                        extract('month', Evaluacion.fecha_evaluacion) == mes_evaluacion_fallback,
-                        extract('year', Evaluacion.fecha_evaluacion) == anio_evaluacion_fallback
-                    )
+                dias_mes = monthrange(anio_objetivo, mes_objetivo)[1]
+                fecha_inicio = date(anio_objetivo, mes_objetivo, 1)
+                fecha_fin = date(anio_objetivo, mes_objetivo, dias_mes)
+
+                # Prioridad: nuevos registros con periodo_mes/periodo_anio exactos
+                filtro_periodo_nuevo = and_(
+                    Evaluacion.periodo_mes == mes_objetivo,
+                    Evaluacion.periodo_anio == anio_objetivo
                 )
-                
-                # APLICAR EL FILTRO
-                # Nota: Removemos el filtro anterior de 'anio' de la query base si vamos a aplicar este filtro combinado
-                # pero como SQLAlchemy encadena 'ANDs', esto podría ser restrictivo.
-                # REINICIAMOS la query para aplicar esta lógica combinada de Año+Mes correctamente
-                
-                # Reiniciamos query base solo con filtros previos (encargado)
+
+                # Registros antiguos (sin periodo explícito): filtrar estrictamente por rango de fechas
+                # y por semanas ISO correspondientes al mes solicitado
+                semanas_mes = sorted({date(anio_objetivo, mes_objetivo, d).isocalendar()[1] for d in range(1, dias_mes + 1)})
+                filtro_periodo_legacy = and_(
+                    or_(Evaluacion.periodo_mes == None, Evaluacion.periodo_mes == 0),
+                    Evaluacion.fecha_evaluacion >= fecha_inicio,
+                    Evaluacion.fecha_evaluacion <= fecha_fin,
+                    Evaluacion.num_semana.in_(semanas_mes),
+                    extract('year', Evaluacion.fecha_evaluacion) == anio_objetivo
+                )
+
+                # Reiniciar la query para aplicar el filtro combinado correctamente
                 query = Evaluacion.query
                 if encargado_id:
-                    query = query.filter(Evaluacion.encargado_id == encargado_id)
-                
-                query = query.filter(filtro_mes_complejo)
-                
-                debug_info['conteos']['despues_filtro_mes_complejo'] = query.count()
-                
+                    query = query.filter(Evaluacion.encargado_id == int(encargado_id))
+
+                query = query.filter(or_(filtro_periodo_nuevo, filtro_periodo_legacy))
+                debug_info['conteos']['despues_filtro_mes'] = query.count()
             except ValueError:
                 return jsonify({'error': 'El valor del periodo debe ser válido'}), 400
         
