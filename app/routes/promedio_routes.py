@@ -26,19 +26,21 @@ def obtener_promedio_encargados():
         # Obtener IDs de encargados únicos
         encargado_ids = {eval.encargado_id for eval in evaluaciones}
         
-        # Consultar nombres e información de encargados
-        encargados = Encargado.query.filter(Encargado.id.in_(encargado_ids)).all()
+        # Consultar nombres e información de encargados (solo activos)
+        encargados = Encargado.query.filter(Encargado.id.in_(encargado_ids), Encargado.activo == True).all()
+        active_encargado_ids = {enc.id for enc in encargados}
         encargados_dict = {enc.id: {
             'nombre': enc.nombre,
             'tipo_evaluacion': enc.tipo_evaluacion
         } for enc in encargados}
         
-        # Agrupar evaluaciones por encargado y fecha
+        # Agrupar evaluaciones por encargado y fecha (solo encargados activos)
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
             fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
             encargado_id = eval.encargado_id
-            evaluaciones_agrupadas[encargado_id][fecha_str].append(eval)
+            if encargado_id in active_encargado_ids:
+                evaluaciones_agrupadas[encargado_id][fecha_str].append(eval)
         
         # Procesar datos por encargado
         resultados_encargados = defaultdict(lambda: {
