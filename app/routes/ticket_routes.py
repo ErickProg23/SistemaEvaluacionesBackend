@@ -398,8 +398,18 @@ def obtener_todos_tickets():
     resultado = [
         {
             'id': ticket.id,
+            'titulo': ticket.titulo,
+            'descripcion': ticket.descripcion,
+            'departamento': getattr(ticket, 'departamento', None),
+            'area': getattr(ticket, 'area', None),
+            'categoria': getattr(ticket, 'categoria', None),
             'estado': ticket.estado,
-            'departamento': ticket.departamento
+            'fecha_creacion': ticket.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_creacion else None,
+            'fecha_cierre': ticket.fecha_cierre.strftime('%Y-%m-%d %H:%M:%S') if ticket.fecha_cierre else None,
+            'usuario_id': ticket.usuario_id,
+            'usuario_nombre': ticket.usuario_rel.nombre if ticket.usuario_rel else None,
+            'asignado_a_id': ticket.asignado_a,
+            'asignado_a_nombre': ticket.empleado_rel.nombre if ticket.empleado_rel else None
         }
         for ticket in tickets
     ]

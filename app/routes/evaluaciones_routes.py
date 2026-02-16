@@ -266,6 +266,8 @@ def obtener_evaluaciones_completas_por_encargado():
         encargado_id = request.args.get('encargado_id', type=int)
         periodo_tipo = request.args.get('periodo_tipo', 'month')
         periodo_valor = request.args.get('periodo_valor')
+        periodo_mes = request.args.get('periodo_mes', type=int)
+        periodo_anio = request.args.get('periodo_anio', type=int)
 
         if not encargado_id:
             return jsonify({'error': 'encargado_id es requerido'}), 400
@@ -285,36 +287,31 @@ def obtener_evaluaciones_completas_por_encargado():
         )
 
         # Filtro de periodo
-        if periodo_tipo and periodo_valor:
+        if periodo_mes is not None and periodo_anio is not None:
+            base_query = base_query.filter(
+                Evaluacion.periodo_mes == periodo_mes,
+                Evaluacion.periodo_anio == periodo_anio
+            )
+        elif periodo_tipo and periodo_valor:
             if periodo_tipo == 'week':
-                num_semana = int(periodo_valor)
-                base_query = base_query.filter(Evaluacion.num_semana == num_semana)
+                return jsonify({'error': 'El filtro semanal ya no está soportado'}), 400
 
             elif periodo_tipo == 'month':
-                from datetime import datetime, date, timedelta
+                from datetime import datetime
 
                 if '-' in periodo_valor:
                     year, month = map(int, periodo_valor.split('-'))
                 else:
-                    year = datetime.now().year
                     month = int(periodo_valor)
-
-                fecha_inicio = date(year, month, 1)
-                fecha_fin = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year, 12, 31)
+                    year = periodo_anio if periodo_anio else datetime.now().year
 
                 base_query = base_query.filter(
-                    Evaluacion.fecha_evaluacion >= fecha_inicio,
-                    Evaluacion.fecha_evaluacion <= fecha_fin
+                    Evaluacion.periodo_anio == year,
+                    Evaluacion.periodo_mes == month
                 )
             elif periodo_tipo == 'year':
                 year = int(periodo_valor)
-                fecha_inicio = date(year, 1, 1)
-                fecha_fin = date(year, 12, 31)
-
-                base_query = base_query.filter(
-                    Evaluacion.fecha_evaluacion >= fecha_inicio,
-                    Evaluacion.fecha_evaluacion <= fecha_fin
-                )
+                base_query = base_query.filter(Evaluacion.periodo_anio == year)
             else:
                 return jsonify({'error': 'periodo_tipo inválido'}), 400
 
@@ -345,15 +342,19 @@ def obtener_evaluaciones_completas_por_encargado():
             if not empleado:
                 continue
 
-            # Agrupar evaluaciones no ausentes por fecha
-            evaluaciones_por_fecha = defaultdict(list)
+            # Agrupar evaluaciones no ausentes por periodo (anio-mes)
+            evaluaciones_por_periodo = defaultdict(list)
             for eval in solo_validas:
-                fecha_str = eval.fecha_evaluacion.strftime('%Y-%m-%d')
-                evaluaciones_por_fecha[fecha_str].append(eval)
+                anio_val = getattr(eval, 'periodo_anio', None)
+                mes_val = getattr(eval, 'periodo_mes', None)
+                if anio_val is None or mes_val is None or mes_val == 0:
+                    continue
+                periodo_clave = f"{anio_val}-{mes_val:02d}"
+                evaluaciones_por_periodo[periodo_clave].append(eval)
 
             calificaciones_individuales = []
 
-            for fecha, registros in evaluaciones_por_fecha.items():
+            for periodo, registros in evaluaciones_por_periodo.items():
                 if len(registros) == aspectos_necesarios:
                     suma = sum(float(r.porcentaje_total) for r in registros)
                     calificacion = (suma / 500) * 100
@@ -361,16 +362,25 @@ def obtener_evaluaciones_completas_por_encargado():
                     calificaciones_individuales.append(calificacion)
 
             promedio = round(sum(calificaciones_individuales) / len(calificaciones_individuales), 2) if calificaciones_individuales else None
-            ultima_fecha = max(e.fecha_evaluacion for e in solo_validas) if solo_validas else None
+            # Determinar el último periodo
+            candidatos = [
+                (e.periodo_anio, e.periodo_mes)
+                for e in solo_validas
+                if e.periodo_anio is not None and e.periodo_mes is not None and e.periodo_mes != 0
+            ]
+            ultimo_periodo_tuple = max(candidatos) if candidatos else None
+            ultimo_periodo = f"{ultimo_periodo_tuple[0]}-{ultimo_periodo_tuple[1]:02d}" if ultimo_periodo_tuple else None
+            ultima_fecha = (f"{ultimo_periodo_tuple[0]}-{ultimo_periodo_tuple[1]:02d}-01" if ultimo_periodo_tuple else None)
 
             resultados.append({
                 'empleado_id': empleado_id,
                 'nombre_empleado': empleado.nombre,
                 'calificacion_promedio': promedio,
-                'ultima_fecha': ultima_fecha.strftime('%Y-%m-%d') if ultima_fecha else None,
+                'ultima_fecha': ultima_fecha,
+                'ultimo_periodo': ultimo_periodo,
                 'encargado_id': encargado_id,
                 'ausencias': total_ausentes,
-                'sin_evaluaciones_validas': len(solo_validas) == 0  # útil para mostrar o marcar en el front
+                'sin_evaluaciones_validas': len(solo_validas) == 0
             })
 
 
@@ -646,20 +656,22 @@ def obtener_evaluaciones_filtradas():
     
     try:
         # Obtener parámetros de filtrado
-        encargado_id = request.args.get('encargado_id')
-        periodo_tipo = request.args.get('periodo_tipo')  # 'mensual' o 'anual' (o vacío)
-        periodo_valor = request.args.get('periodo_valor')  # El mes (1-12) si es mensual
-        anio = request.args.get('anio')  # El año (ej. 2024)
+        encargado_id = request.args.get('encargado_id', type=int)
+        periodo_tipo = request.args.get('periodo_tipo')
+        periodo_mes = request.args.get('periodo_mes', type=int)
+        periodo_anio = request.args.get('periodo_anio', type=int)
+        periodo_valor = request.args.get('periodo_valor')
+        anio = request.args.get('anio')
         
-        debug = request.args.get('debug') == '1'  # Parámetro de depuración
+        debug = request.args.get('debug') == '1'
         
         # Información de depuración
         debug_info = {
             'parametros': {
                 'encargado_id': encargado_id,
                 'periodo_tipo': periodo_tipo,
-                'periodo_valor': periodo_valor,
-                'anio': anio
+                'periodo_mes': periodo_mes,
+                'periodo_anio': periodo_anio
             },
             'conteos': {}
         }
@@ -673,83 +685,41 @@ def obtener_evaluaciones_filtradas():
         
         # 1. Filtro por Encargado
         if encargado_id:
-            query = query.filter(Evaluacion.encargado_id == encargado_id)
-            debug_info['conteos']['despues_filtro_encargado'] = query.count()
+            query = query.filter(Evaluacion.encargado_id == int(encargado_id))
+        debug_info['conteos']['despues_filtro_encargado'] = query.count()
         
-        # 2. Filtro por Año (Obligatorio si viene)
-        if anio:
-            try:
-                anio_int = int(anio)
-                
-                # Lógica de fallback ajustada al flujo de negocio:
-                # Si se busca el periodo "2024", y no hay columna explícita, 
-                # buscamos registros creados en "2025" (año siguiente) porque se evalúa a mes vencido.
-                # NOTA: Esto es complejo solo con el año, así que para el fallback de AÑO puro
-                # mantenemos la lógica simple o asumimos que la mayoría buscará por mes y año.
-                # Para simplificar y no romper lógica anual general, en fallback de solo AÑO
-                # usaremos el año directo, PERO en el filtro de MES haremos el ajuste fino.
-                
-                filtro_anio = or_(
-                    # 1. Coincidencia EXACTA en columna explicita (PRIORIDAD MAXIMA)
-                    Evaluacion.periodo_anio == anio_int,
-                    
-                    # 2. Fallback: Si no tiene periodo explicito...
-                    and_(
-                        or_(Evaluacion.periodo_anio == 0, Evaluacion.periodo_anio == None),
-                        # ... usamos fecha_evaluacion. 
-                        # PERO OJO: Si buscamos 2024, podrían ser evaluaciones de Enero 2025 (periodo Dic 2024).
-                        # Sin embargo, filtrar solo por año "vencido" es ambiguo.
-                        # Asumiremos coincidencia directa de año para el fallback general,
-                        # y el ajuste preciso se hace cuando se pide el MES específico.
-                        extract('year', Evaluacion.fecha_evaluacion) == anio_int
-                    )
-                )
-                query = query.filter(filtro_anio)
-                debug_info['conteos']['despues_filtro_anio'] = query.count()
-            except ValueError:
-                return jsonify({'error': 'El año debe ser un número entero'}), 400
-
-        # 3. Filtro por Periodo (Mensual)
+        # Filtros por periodo (solo usando columnas de periodo)
         tipo = (periodo_tipo or '').strip().lower()
-        if tipo in ('mensual', 'month', 'mes'):
-            if not periodo_valor or not anio:
-                return jsonify({'error': 'Se requieren periodo_valor (mes) y anio para filtro mensual exacto'}), 400
-            try:
-                mes_objetivo = int(periodo_valor)
-                anio_objetivo = int(anio)
-                from datetime import date
-                from calendar import monthrange
+        if tipo in ('month', 'mensual', 'mes'):
+            mes_obj = periodo_mes
+            anio_obj = periodo_anio
+            if mes_obj is None or anio_obj is None:
+                if periodo_valor and anio:
+                    try:
+                        mes_obj = int(periodo_valor)
+                        anio_obj = int(anio)
+                    except ValueError:
+                        return jsonify({'error': 'periodo_valor y anio deben ser enteros'}), 400
+                elif periodo_valor and '-' in periodo_valor:
+                    try:
+                        anio_obj, mes_obj = map(int, periodo_valor.split('-'))
+                    except Exception:
+                        return jsonify({'error': 'Formato inválido de periodo_valor, use MM o YYYY-MM'}), 400
+                else:
+                    return jsonify({'error': 'Faltan periodo_mes/periodo_anio o periodo_valor+anio para filtro mensual'}), 400
+            query = query.filter(
+                Evaluacion.periodo_mes == mes_obj,
+                Evaluacion.periodo_anio == anio_obj
+            )
+        elif tipo in ('year', 'año'):
+            if periodo_anio is None:
+                return jsonify({'error': 'Se requiere periodo_anio para filtro anual'}), 400
+            query = query.filter(Evaluacion.periodo_anio == periodo_anio)
+        elif tipo in ('week', 'semana'):
+            return jsonify({'error': 'El filtro semanal ya no está soportado'}), 400
+        elif tipo:
+            return jsonify({'error': 'periodo_tipo inválido'}), 400
 
-                dias_mes = monthrange(anio_objetivo, mes_objetivo)[1]
-                fecha_inicio = date(anio_objetivo, mes_objetivo, 1)
-                fecha_fin = date(anio_objetivo, mes_objetivo, dias_mes)
-
-                # Prioridad: nuevos registros con periodo_mes/periodo_anio exactos
-                filtro_periodo_nuevo = and_(
-                    Evaluacion.periodo_mes == mes_objetivo,
-                    Evaluacion.periodo_anio == anio_objetivo
-                )
-
-                # Registros antiguos (sin periodo explícito): filtrar estrictamente por rango de fechas
-                # y por semanas ISO correspondientes al mes solicitado
-                semanas_mes = sorted({date(anio_objetivo, mes_objetivo, d).isocalendar()[1] for d in range(1, dias_mes + 1)})
-                filtro_periodo_legacy = and_(
-                    or_(Evaluacion.periodo_mes == None, Evaluacion.periodo_mes == 0),
-                    Evaluacion.fecha_evaluacion >= fecha_inicio,
-                    Evaluacion.fecha_evaluacion <= fecha_fin,
-                    Evaluacion.num_semana.in_(semanas_mes),
-                    extract('year', Evaluacion.fecha_evaluacion) == anio_objetivo
-                )
-
-                # Reiniciar la query para aplicar el filtro combinado correctamente
-                query = Evaluacion.query
-                if encargado_id:
-                    query = query.filter(Evaluacion.encargado_id == int(encargado_id))
-
-                query = query.filter(or_(filtro_periodo_nuevo, filtro_periodo_legacy))
-                debug_info['conteos']['despues_filtro_mes'] = query.count()
-            except ValueError:
-                return jsonify({'error': 'El valor del periodo debe ser válido'}), 400
         
         # Ejecutar la consulta
         evaluaciones = query.all()
@@ -1253,11 +1223,11 @@ def obtener_evaluaciones_empleado(empleado_id):
         return '', 200
     
     try:
-        # Obtener parámetros de filtro con nuevos nombres
-        encargado_id = request.args.get('encargado_id', type=int)  # ID del encargado
-        periodo = request.args.get('periodo_tipo', 'mes')  # Valores posibles: 'month', 'week', 'year'
-        periodo_valor = request.args.get('periodo_valor')  # Puede ser "3" para marzo, "2024-03", "15" para semana, etc.
-        current_year = datetime.now().year
+        # Obtener parámetros de filtro
+        encargado_id = request.args.get('encargado_id', type=int)
+        periodo = request.args.get('periodo_tipo', 'mes')
+        periodo_mes = request.args.get('periodo_mes', type=int)
+        periodo_anio = request.args.get('periodo_anio', type=int)
         
         # Validar que el empleado existe
         empleado = Empleado.query.get(empleado_id)
@@ -1280,74 +1250,40 @@ def obtener_evaluaciones_empleado(empleado_id):
         if not periodo_mapeado:
             return jsonify({'error': 'Periodo no válido. Use "month", "year" o "week".'}), 400
             
-        # Generar fecha_seleccionada según el periodo
-        try:
-            if periodo_mapeado == 'mes':
-                if periodo_valor and periodo_valor.isdigit() and '-' not in periodo_valor:
-                    year = current_year
-                    month = int(periodo_valor)
-                    fecha_seleccionada = date(year, month, 1)
-                else:
-                    try:
-                        year, month = map(int, periodo_valor.split('-'))
-                        fecha_seleccionada = date(year, month, 1)
-                    except (ValueError, AttributeError):
-                        raise ValueError(f"Formato de mes inválido: {periodo_valor}. Use MM o YYYY-MM")
-                fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
-                query = Evaluacion.query.filter(
-                    Evaluacion.empleado_id == empleado_id,
-                    Evaluacion.fecha_evaluacion >= fecha_inicio,
-                    Evaluacion.fecha_evaluacion <= fecha_fin
-                )
-            elif periodo_mapeado == 'año':
-                year = int(periodo_valor)
-                fecha_seleccionada = date(year, 1, 1)
-                fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
-                query = Evaluacion.query.filter(
-                    Evaluacion.empleado_id == empleado_id,
-                    Evaluacion.fecha_evaluacion >= fecha_inicio,
-                    Evaluacion.fecha_evaluacion <= fecha_fin
-                )
-            elif periodo_mapeado == 'semana':
-                # SOLO filtra por num_semana y año actual, no uses fechas
-                week = int(periodo_valor)
-                fecha_seleccionada = datetime.fromisocalendar(current_year, week, 1).date()
-                query = Evaluacion.query.filter(
-                    Evaluacion.empleado_id == empleado_id,
-                    Evaluacion.num_semana == week,
-                    db.extract('year', Evaluacion.fecha_evaluacion) == current_year
-                )
-                fecha_inicio = None
-                fecha_fin = None
-        except ValueError as e:
-            hoy = datetime.now()
-            fecha_seleccionada = date(hoy.year, hoy.month, 1)
-            periodo_mapeado = 'mes'
-            fecha_inicio, fecha_fin = calcular_rango_fechas(periodo_mapeado, fecha_seleccionada)
+        # Filtro por periodo (sin usar fecha_evaluacion ni semana)
+        if periodo_mapeado == 'mes':
+            if periodo_mes is None or periodo_anio is None:
+                return jsonify({'error': 'Se requieren periodo_mes y periodo_anio'}), 400
+            fecha_seleccionada = date(periodo_anio, periodo_mes, 1)
             query = Evaluacion.query.filter(
                 Evaluacion.empleado_id == empleado_id,
-                Evaluacion.fecha_evaluacion >= fecha_inicio,
-                Evaluacion.fecha_evaluacion <= fecha_fin
+                Evaluacion.periodo_mes == periodo_mes,
+                Evaluacion.periodo_anio == periodo_anio
             )
+        elif periodo_mapeado == 'año':
+            if periodo_anio is None:
+                return jsonify({'error': 'Se requiere periodo_anio para consulta anual'}), 400
+            fecha_seleccionada = date(periodo_anio, 1, 1)
+            query = Evaluacion.query.filter(
+                Evaluacion.empleado_id == empleado_id,
+                Evaluacion.periodo_anio == periodo_anio
+            )
+        elif periodo_mapeado == 'semana':
+            return jsonify({'error': 'El filtro semanal ya no está soportado'}), 400
         
                 # Agregar filtro por encargado si se proporciona
         if encargado_id:
             query = query.filter(Evaluacion.encargado_id == encargado_id)
 
         # Ejecutar la consulta
-        evaluaciones = query.order_by(Evaluacion.fecha_evaluacion.desc()).all()
+        evaluaciones = query.order_by(Evaluacion.periodo_anio.desc(), Evaluacion.periodo_mes.desc(), Evaluacion.id.desc()).all()
         
         if not evaluaciones:
             return jsonify({
                 'empleado_id': empleado_id,
                 'empleado_nombre': empleado.nombre,
                 'tipo_evaluacion': tipo_evaluacion,
-                'periodo': formatear_periodo(periodo_mapeado, fecha_seleccionada),
-                'num Semana': week,
-                'rango_fechas': {
-                    'inicio': fecha_inicio.strftime('%Y-%m-%d'),
-                    'fin': fecha_fin.strftime('%Y-%m-%d')
-                },
+                'periodo': (f"{periodo_anio}-{periodo_mes:02d}" if periodo_mapeado == 'mes' and periodo_anio and periodo_mes else (str(periodo_anio) if periodo_mapeado == 'año' and periodo_anio else '')),
                 'message': 'No hay evaluaciones para este empleado en el período seleccionado',
                 'evaluaciones': []
             }), 200
@@ -1430,7 +1366,7 @@ def obtener_evaluaciones_empleado(empleado_id):
                     })
         
         # Formatear el periodo para la respuesta
-        periodo_formateado = formatear_periodo(periodo_mapeado, fecha_seleccionada)
+        periodo_formateado = f"{periodo_anio}-{periodo_mes:02d}" if periodo_mapeado == 'mes' and periodo_anio and periodo_mes else formatear_periodo(periodo_mapeado, fecha_seleccionada)
         
       # Al armar la respuesta final:
         response = {
@@ -1440,11 +1376,6 @@ def obtener_evaluaciones_empleado(empleado_id):
             'periodo': periodo_formateado,
             'evaluaciones': resultados
         }
-        if periodo_mapeado != 'semana':
-            response['rango_fechas'] = {
-                'inicio': fecha_inicio.strftime('%Y-%m-%d'),
-                'fin': fecha_fin.strftime('%Y-%m-%d')
-            }
         return jsonify(response), 200
         
     except Exception as e:
