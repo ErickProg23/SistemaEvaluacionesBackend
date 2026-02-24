@@ -9,6 +9,7 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # id como clave primaria y autoincrementable
     nombre = db.Column(db.String(255),unique=True, nullable=False)  # Nombre del usuario
     usuario = db.Column(db.String(255), unique=True, nullable=False)  # Usuario unico
+    correo = db.Column(db.String(255), unique=True, nullable=True)  # Correo electrónico
     contrasena = db.Column(db.String(50), nullable=False)  # Contraseña encriptada
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)  # Clave foránea a la tabla "roles"
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)  # Fecha de creación, por defecto la hora actual

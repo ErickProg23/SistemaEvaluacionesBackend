@@ -24,6 +24,7 @@ def obtener_todos_usuarios():
                 'id': usuario.id,
                 'nombre': usuario.nombre,
                 'usuario': usuario.usuario,
+                'correo': usuario.correo,
                 'rol_id': usuario.rol_id,
                 'activo': usuario.activo
             }
@@ -52,10 +53,18 @@ def crear_usuario():
         if usuario_existente:
             return jsonify({'message': 'Ya existe un usuario con ese usuario'}), 409
         
+        # Validar correo (opcional) y unicidad
+        correo = (data.get('correo') or '').strip()
+        if correo:
+            correo_existente = Usuario.query.filter_by(correo=correo).first()
+            if correo_existente:
+                return jsonify({'message': 'Ya existe un usuario con ese correo'}), 409
+
         # Crear nuevo usuario
         nuevo_usuario = Usuario(
             nombre=data['nombre'],
             usuario=data['usuario'],
+            correo=correo if correo else None,
             contrasena=data['password'],  # Considera encriptar la contraseña
             rol_id=data['rol_id'],
             activo=True
@@ -70,6 +79,7 @@ def crear_usuario():
                 'id': nuevo_usuario.id,
                 'nombre': nuevo_usuario.nombre,
                 'usuario': nuevo_usuario.usuario,
+                'correo': nuevo_usuario.correo,
                 'rol_id': nuevo_usuario.rol_id,
                 'activo': nuevo_usuario.activo
             }
@@ -110,6 +120,16 @@ def actualizar_usuario(id):
         if 'rol_id' in data:
             usuario.rol_id = data['rol_id']
         
+        if 'correo' in data:
+            correo_new = (data['correo'] or '').strip()
+            if correo_new:
+                correo_existente = Usuario.query.filter_by(correo=correo_new).first()
+                if correo_existente and correo_existente.id != id:
+                    return jsonify({'message': 'El correo ya está en uso por otro usuario'}), 409
+                usuario.correo = correo_new
+            else:
+                usuario.correo = None
+        
         if 'activo' in data:
             usuario.activo = data['activo']
         
@@ -121,6 +141,7 @@ def actualizar_usuario(id):
                 'id': usuario.id,
                 'nombre': usuario.nombre,
                 'usuario': usuario.usuario,
+                'correo': usuario.correo,
                 'rol_id': usuario.rol_id,
                 'activo': usuario.activo
             }

@@ -14,6 +14,7 @@ from . import jwt, bcrypt  # Asegúrate de que `bcrypt` esté configurado en tu 
 # Crear un Blueprint para las rutas
 routes_blueprint = Blueprint('routes', __name__)
 
+
 @jwt.user_identity_loader
 def user_identity_lookup(user):
     return user  # Ajusta esto según el campo de identidad único de tu modelo de usuario

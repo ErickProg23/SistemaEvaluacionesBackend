@@ -138,12 +138,42 @@ def crear_ticket():
      # Enviar correo según casos configurados
     try:
         dep_key = (departamento or '').strip().lower()
-        destinatarios = DEPARTAMENTO_DESTINATARIOS.get(dep_key, [])
+
+        from app.models import Encargado, Usuario
+        mapa_dept_puesto = {
+            'sistemas': 'Encargado Sistemas',
+            'mantenimiento': 'Encargado Mantenimiento',
+            'ama de llaves': 'Ama de Llaves',
+            'seguridad': 'Seguridad y Bienestar',
+            'ayb': 'AyB',
+            'recepcion': 'Jefe de Recepción',
+            'eventos': 'Ventas',
+            'administracion': 'Administrador',
+            'capital humano': 'Capital humano'
+        }
+
+        destinatarios = []
+        puesto_target = mapa_dept_puesto.get(dep_key)
+
+        if puesto_target:
+            encargados = Encargado.query.filter(
+                Encargado.puesto.ilike(f"%{puesto_target}%"),
+                Encargado.activo == True
+            ).all()
+            correos = []
+            for enc in encargados:
+                if enc.usuario_id:
+                    u = Usuario.query.get(enc.usuario_id)
+                    if u and u.correo:
+                        correos.append(u.correo)
+            destinatarios = list(set(correos))
+
+        if not destinatarios:
+            destinatarios = DEPARTAMENTO_DESTINATARIOS.get(dep_key, [])
 
         if destinatarios:
             asunto = f"Nuevo ticket en el departamento de {dep_key.capitalize()}"
             fecha_str = nuevo_ticket.fecha_creacion.strftime('%d/%m/%Y') if nuevo_ticket.fecha_creacion else ''
-            # Construir enlace de seguimiento (usa el BASE URL configurado; ajusta por tu dominio)
             base_url = current_app.config.get('SITIO_BASE_URL', 'https://evaluacioneseva.com/login')
             link_seguimiento = f"{base_url}"
 
@@ -160,7 +190,6 @@ def crear_ticket():
                 f"Seguimiento: {link_seguimiento}\n"
             )
 
-            # Versión HTML opcional (mejor presentación en clientes de correo)
             cuerpo_html = f"""
                 <p>Se ha creado un nuevo ticket:</p>
                 <ul>
