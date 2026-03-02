@@ -5,14 +5,34 @@ from app import db
 from app.models import EmpleadoEncargado, Evaluacion, EvaluacionAtrasada
 
 def detectar_evaluaciones_atrasadas():
+    from calendar import monthcalendar, FRIDAY
+
     hoy = date.today()
 
-    if hoy.month == 1:
-        periodo_mes = 12
-        periodo_anio = hoy.year - 1
+    cal = monthcalendar(hoy.year, hoy.month)
+    for week in reversed(cal):
+        if week[FRIDAY] != 0:
+            lf_day = week[FRIDAY]
+            break
+    lf_actual = date(hoy.year, hoy.month, lf_day)
+
+    if hoy > lf_actual:
+        periodo_mes = lf_actual.month
+        periodo_anio = lf_actual.year
+        last_friday = lf_actual
     else:
-        periodo_mes = hoy.month - 1
-        periodo_anio = hoy.year
+        if hoy.month == 1:
+            periodo_mes = 12
+            periodo_anio = hoy.year - 1
+        else:
+            periodo_mes = hoy.month - 1
+            periodo_anio = hoy.year
+        cal_prev = monthcalendar(periodo_anio, periodo_mes)
+        for week in reversed(cal_prev):
+            if week[FRIDAY] != 0:
+                lf_day_prev = week[FRIDAY]
+                break
+        last_friday = date(periodo_anio, periodo_mes, lf_day_prev)
 
     encargados_con_empleados = {
         e[0] for e in db.session.query(EmpleadoEncargado.encargado_id).distinct().all()
@@ -20,7 +40,11 @@ def detectar_evaluaciones_atrasadas():
 
     encargados_que_evaluaron = {
         e[0] for e in db.session.query(Evaluacion.encargado_id)
-        .filter_by(periodo_anio=periodo_anio, periodo_mes=periodo_mes)
+        .filter(
+            Evaluacion.periodo_anio == periodo_anio,
+            Evaluacion.periodo_mes == periodo_mes,
+            Evaluacion.fecha_evaluacion == last_friday
+        )
         .distinct().all()
     }
 
@@ -38,7 +62,7 @@ def detectar_evaluaciones_atrasadas():
         if not existe:
             atraso = EvaluacionAtrasada(
                 id_encargado=id_encargado,
-                num_semana=0,  # valor por defecto ya que ahora trabajamos por mes
+                num_semana=0,
                 periodo_anio=periodo_anio,
                 periodo_mes=periodo_mes,
                 fecha_detectado=hoy

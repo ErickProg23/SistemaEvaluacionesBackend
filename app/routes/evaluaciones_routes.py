@@ -38,6 +38,18 @@ def guardar_evaluacion():
         if not payload or not id_encargado or not periodo_anio or not periodo_mes:
             return jsonify({'error': 'Datos incompletos'}), 400
 
+        import calendar
+        from datetime import date
+        cal = calendar.monthcalendar(int(periodo_anio), int(periodo_mes))
+        for week in reversed(cal):
+            if week[calendar.FRIDAY] != 0:
+                lf_day = week[calendar.FRIDAY]
+                break
+        ultimo_viernes = date(int(periodo_anio), int(periodo_mes), lf_day)
+        hoy = date.today()
+        if hoy != ultimo_viernes:
+            return jsonify({'error': 'Las evaluaciones solo se pueden registrar el último viernes del mes seleccionado'}), 400
+
         for evaluacion_data in payload:
             empleado_id = evaluacion_data.get('empleado_id')
             calificaciones = evaluacion_data.get('calificaciones')
@@ -96,6 +108,18 @@ def guardar_evaluacionEncargado():
         
         if not payload or not id_usuario or not periodo_anio or not periodo_mes:
             return jsonify({'error': 'Datos incompletos'}), 400
+
+        import calendar
+        from datetime import date
+        cal = calendar.monthcalendar(int(periodo_anio), int(periodo_mes))
+        for week in reversed(cal):
+            if week[calendar.FRIDAY] != 0:
+                lf_day = week[calendar.FRIDAY]
+                break
+        ultimo_viernes = date(int(periodo_anio), int(periodo_mes), lf_day)
+        hoy = date.today()
+        if hoy != ultimo_viernes:
+            return jsonify({'error': 'Las evaluaciones solo se pueden registrar el último viernes del mes seleccionado'}), 400
 
         for evaluacion_data in payload:
             encargado_id = evaluacion_data.get('empleado_id')
@@ -1545,14 +1569,26 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
         from app.models import EvaluacionAtrasada
         from datetime import date
 
-        # Calcular el periodo anterior (mes pasado)
+        # Calcular el periodo objetivo según último viernes
         hoy = date.today()
-        if hoy.month == 1:
-            periodo_mes = 12
-            periodo_anio = hoy.year - 1
+        import calendar
+        cal = calendar.monthcalendar(hoy.year, hoy.month)
+        for week in reversed(cal):
+            if week[calendar.FRIDAY] != 0:
+                lf_day = week[calendar.FRIDAY]
+                break
+        lf_actual = date(hoy.year, hoy.month, lf_day)
+
+        if hoy > lf_actual:
+            periodo_mes = lf_actual.month
+            periodo_anio = lf_actual.year
         else:
-            periodo_mes = hoy.month - 1
-            periodo_anio = hoy.year
+            if hoy.month == 1:
+                periodo_mes = 12
+                periodo_anio = hoy.year - 1
+            else:
+                periodo_mes = hoy.month - 1
+                periodo_anio = hoy.year
 
         evaluaciones = (
             db.session.query(EvaluacionAtrasada, Encargado)
