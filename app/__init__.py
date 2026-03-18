@@ -36,6 +36,7 @@ def create_app():
         from .routes.creacion_routes import creacion_bp
         from .routes.evaluaciones_routes import evaluacion_bp
         from .routes.notificaciones_routes import notis_bp
+        from .routes.habitacionesInspecciones_routes import habitacionesInspecciones_bp
         from .routes.formato_routes import formato_bp
         from .routes.promedio_routes import prom_bp
         from .routes.ticket_routes import tickets_bp
@@ -65,5 +66,6 @@ def create_app():
         app.register_blueprint(configuracion_bp, url_prefix='/api/configuracion')
         app.register_blueprint(routes_blueprint, url_prefix='/api')
         app.register_blueprint(uploads_bp, url_prefix='/uploads')
-    
+        app.register_blueprint(habitacionesInspecciones_bp, url_prefix='/api/habitacionesInspecciones')  # Registrar el Blueprint de habitaciones inspecciones
+
     return app

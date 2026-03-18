@@ -256,7 +256,6 @@ class EvaluacionAtrasada(db.Model):
     periodo_mes = db.Column(db.Integer, nullable=False)
     periodo_anio = db.Column(db.Integer, nullable=False)
     fecha_detectado = db.Column(db.Date, default=datetime.utcnow)
-    notificado = db.Column(db.Boolean, default=False)
     activo = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
@@ -346,4 +345,34 @@ class NotificacionTicket(db.Model):
             'fecha': self.fecha_actualizacion.isoformat(),
             'leido': self.leido,
             'tipo': 'ticket_chat' # Útil para distinguir en el frontend
+        }
+
+class HabitacionesInspecciones(db.Model):
+    __tablename__ = 'habitaciones_inspecciones'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    room_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
+    control_tv = db.Column(db.Boolean, default=False)
+    telefono = db.Column(db.Boolean, default=False)
+    roku = db.Column(db.Boolean, default=False)
+    toallas = db.Column(db.Boolean, default=False)
+    botella_vidrio = db.Column(db.Boolean, default=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'room_id': self.room_id,
+            'user_id': self.user_id,
+            'control_tv': self.control_tv,
+            'telefono': self.telefono,
+            'roku': self.roku,
+            'toallas': self.toallas,
+            'botella_vidrio': self.botella_vidrio,
+            'notes': self.notes,
+            'created_at': (self.created_at.isoformat() if self.created_at else None),
+            'updated_at': (self.updated_at.isoformat() if self.updated_at else None)
         }

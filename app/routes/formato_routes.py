@@ -115,7 +115,8 @@ def imprimir_pdf_medida_disciplinaria():
 
     try:
         from weasyprint import HTML, CSS
-        pdf = HTML(string=html_out).write_pdf()
+        from flask import current_app
+        pdf = HTML(string=html_out, base_url=current_app.root_path).write_pdf()
     except Exception:
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)

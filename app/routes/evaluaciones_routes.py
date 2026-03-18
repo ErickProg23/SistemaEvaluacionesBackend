@@ -1569,26 +1569,36 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
         from app.models import EvaluacionAtrasada
         from datetime import date
 
-        # Calcular el periodo objetivo según último viernes
+        # Calcular el periodo objetivo según último viernes, con override opcional
         hoy = date.today()
-        import calendar
-        cal = calendar.monthcalendar(hoy.year, hoy.month)
-        for week in reversed(cal):
-            if week[calendar.FRIDAY] != 0:
-                lf_day = week[calendar.FRIDAY]
-                break
-        lf_actual = date(hoy.year, hoy.month, lf_day)
+        import os, calendar
+        override = os.getenv('EVALS_LAST_FRIDAY_OVERRIDE')
+        if override:
+            from datetime import datetime as dt
+            try:
+                lf = dt.strptime(override, '%Y-%m-%d').date()
+                periodo_mes = lf.month
+                periodo_anio = lf.year
+            except Exception:
+                override = None
+        if not override:
+            cal = calendar.monthcalendar(hoy.year, hoy.month)
+            for week in reversed(cal):
+                if week[calendar.FRIDAY] != 0:
+                    lf_day = week[calendar.FRIDAY]
+                    break
+            lf_actual = date(hoy.year, hoy.month, lf_day)
 
-        if hoy > lf_actual:
-            periodo_mes = lf_actual.month
-            periodo_anio = lf_actual.year
-        else:
-            if hoy.month == 1:
-                periodo_mes = 12
-                periodo_anio = hoy.year - 1
+            if hoy > lf_actual:
+                periodo_mes = lf_actual.month
+                periodo_anio = lf_actual.year
             else:
-                periodo_mes = hoy.month - 1
-                periodo_anio = hoy.year
+                if hoy.month == 1:
+                    periodo_mes = 12
+                    periodo_anio = hoy.year - 1
+                else:
+                    periodo_mes = hoy.month - 1
+                    periodo_anio = hoy.year
 
         evaluaciones = (
             db.session.query(EvaluacionAtrasada, Encargado)
