@@ -78,7 +78,9 @@ def detectar_evaluaciones_atrasadas():
                 num_semana=0,
                 periodo_anio=periodo_anio,
                 periodo_mes=periodo_mes,
-                fecha_detectado=hoy
+                fecha_detectado=hoy,
+                activo=False,
+                finalizada=False
             )
             db.session.add(atraso)
             nuevos_atrasos.append(id_encargado)

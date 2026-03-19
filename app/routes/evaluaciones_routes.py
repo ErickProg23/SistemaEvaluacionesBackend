@@ -48,7 +48,15 @@ def guardar_evaluacion():
         ultimo_viernes = date(int(periodo_anio), int(periodo_mes), lf_day)
         hoy = date.today()
         if hoy != ultimo_viernes:
-            return jsonify({'error': 'Las evaluaciones solo se pueden registrar el último viernes del mes seleccionado'}), 400
+            permiso_atrasada = EvaluacionAtrasada.query.filter_by(
+                id_encargado=id_encargado,
+                periodo_anio=periodo_anio,
+                periodo_mes=periodo_mes,
+                activo=True,
+                finalizada=False
+            ).first()
+            if not permiso_atrasada:
+                return jsonify({'error': 'Las evaluaciones solo se pueden registrar el último viernes del mes seleccionado'}), 400
 
         for evaluacion_data in payload:
             empleado_id = evaluacion_data.get('empleado_id')
@@ -1604,7 +1612,8 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
             db.session.query(EvaluacionAtrasada, Encargado)
             .join(Encargado, EvaluacionAtrasada.id_encargado == Encargado.id)
             .filter(
-                EvaluacionAtrasada.activo == True,
+                EvaluacionAtrasada.activo == False,
+                EvaluacionAtrasada.finalizada == False,
                 EvaluacionAtrasada.periodo_mes == periodo_mes,
                 EvaluacionAtrasada.periodo_anio == periodo_anio
             )
@@ -1626,6 +1635,7 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
                 "periodo_anio": evaluacion.periodo_anio,
                 "num_semana": evaluacion.num_semana,
                 "activo": evaluacion.activo,
+                "finalizada": getattr(evaluacion, 'finalizada', False),
             })
 
         return jsonify(evaluaciones_atrasadas), 200
@@ -1655,14 +1665,20 @@ def liberar_evaluacion_tardia():
         ).first()
 
         if evaluacion_existente:
-            return jsonify({"mensaje": "Ya existe una evaluación atrasada para este encargado y periodo"}), 200
+            evaluacion_existente.activo = bool(activo)
+            evaluacion_existente.finalizada = False
+            if num_semana is not None:
+                evaluacion_existente.num_semana = num_semana
+            db.session.commit()
+            return jsonify({"mensaje": "Evaluación atrasada liberada correctamente"}), 200
 
         nueva_evaluacion = EvaluacionAtrasada(
             id_encargado=id_encargado,
             num_semana=num_semana if num_semana is not None else 0,
             periodo_mes=periodo_mes,
             periodo_anio=periodo_anio,
-            activo=activo
+            activo=bool(activo),
+            finalizada=False
         )
 
         db.session.add(nueva_evaluacion)
@@ -1700,6 +1716,7 @@ def finalizar_evaluacion_atrasda_delEncargado():
             return jsonify({"error": "Evaluación atrasada no encontrada"}), 404
 
         evaluacion_atrasada.activo = False
+        evaluacion_atrasada.finalizada = True
         db.session.commit()
 
         return jsonify({"mensaje": "Evaluación atrasada finalizada correctamente"}), 200
@@ -1732,7 +1749,11 @@ def obtener_evaluaciones_tardias_encargado(encargado_id):
                 'evaluaciones_tardias': []
             }), 200
 
-        evaluaciones_tardias = EvaluacionAtrasada.query.filter_by(id_encargado=encargado_id).all()
+        evaluaciones_tardias = EvaluacionAtrasada.query.filter_by(
+            id_encargado=encargado_id,
+            activo=True,
+            finalizada=False
+        ).all()
         
         if not evaluaciones_tardias:
             return jsonify({
@@ -1750,7 +1771,8 @@ def obtener_evaluaciones_tardias_encargado(encargado_id):
                 'periodo_mes': evaluacion.periodo_mes,
                 'periodo_anio': evaluacion.periodo_anio,
                 'num_semana': evaluacion.num_semana,
-                'activo': evaluacion.activo
+                'activo': evaluacion.activo,
+                'finalizada': getattr(evaluacion, 'finalizada', False)
             })
 
         return jsonify({

@@ -257,9 +257,10 @@ class EvaluacionAtrasada(db.Model):
     periodo_anio = db.Column(db.Integer, nullable=False)
     fecha_detectado = db.Column(db.Date, default=datetime.utcnow)
     activo = db.Column(db.Boolean, default=True)
+    finalizada = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
-        return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Periodo: {self.periodo_mes}/{self.periodo_anio}, Fecha Detectado: {self.fecha_detectado}>'
+        return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Periodo: {self.periodo_mes}/{self.periodo_anio}, Activo: {self.activo}, Finalizada: {self.finalizada}, Fecha Detectado: {self.fecha_detectado}>'
 
 class Ticket(db.Model):
     __tablename__ = 'ticket'
