@@ -17,7 +17,7 @@ def new_employee():
     if not data:
         return jsonify({'error': 'No se recibio datos'}), 400
 
-    nombre = data.get('nombre').strip().lower()  # Convertir a minúsculas y quitar espacios
+    nombre = ' '.join(((data.get('nombre') or '').strip()).split())
     puesto = data.get('puesto')
     num_empleado = data.get('num_empleado')
     encargados_ids = data.get('encargados_ids', [])
