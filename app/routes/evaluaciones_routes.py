@@ -1574,44 +1574,15 @@ def get_evaluaciones_atrasadas_todos(usuario_id):
         if not usuario or usuario.rol_id not in [1, 5]:
             return jsonify({'error': 'No autorizado'}), 403
 
-        from app.models import EvaluacionAtrasada
-        from datetime import date
+        from app.services.evaluaciones_service import detectar_evaluaciones_atrasadas
 
-        # Calcular el periodo objetivo según último viernes, con override opcional
-        hoy = date.today()
-        import os, calendar
-        override = os.getenv('EVALS_LAST_FRIDAY_OVERRIDE')
-        if override:
-            from datetime import datetime as dt
-            try:
-                lf = dt.strptime(override, '%Y-%m-%d').date()
-                periodo_mes = lf.month
-                periodo_anio = lf.year
-            except Exception:
-                override = None
-        if not override:
-            cal = calendar.monthcalendar(hoy.year, hoy.month)
-            for week in reversed(cal):
-                if week[calendar.FRIDAY] != 0:
-                    lf_day = week[calendar.FRIDAY]
-                    break
-            lf_actual = date(hoy.year, hoy.month, lf_day)
-
-            if hoy > lf_actual:
-                periodo_mes = lf_actual.month
-                periodo_anio = lf_actual.year
-            else:
-                if hoy.month == 1:
-                    periodo_mes = 12
-                    periodo_anio = hoy.year - 1
-                else:
-                    periodo_mes = hoy.month - 1
-                    periodo_anio = hoy.year
+        _, periodo_anio, periodo_mes = detectar_evaluaciones_atrasadas()
 
         evaluaciones = (
             db.session.query(EvaluacionAtrasada, Encargado)
             .join(Encargado, EvaluacionAtrasada.id_encargado == Encargado.id)
             .filter(
+                Encargado.activo == True,
                 EvaluacionAtrasada.activo == False,
                 EvaluacionAtrasada.finalizada == False,
                 EvaluacionAtrasada.periodo_mes == periodo_mes,

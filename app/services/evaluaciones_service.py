@@ -2,7 +2,7 @@
 
 from datetime import date
 from app import db
-from app.models import EmpleadoEncargado, Evaluacion, EvaluacionAtrasada
+from app.models import EmpleadoEncargado, Encargado, Evaluacion, EvaluacionAtrasada
 
 def detectar_evaluaciones_atrasadas():
     hoy = date.today()
@@ -48,7 +48,14 @@ def detectar_evaluaciones_atrasadas():
             last_friday = date(periodo_anio, periodo_mes, lf_day_prev)
 
     encargados_con_empleados = {
-        e[0] for e in db.session.query(EmpleadoEncargado.encargado_id).distinct().all()
+        e[0]
+        for e in (
+            db.session.query(Encargado.id)
+            .join(EmpleadoEncargado, EmpleadoEncargado.encargado_id == Encargado.id)
+            .filter(Encargado.activo == True)
+            .distinct()
+            .all()
+        )
     }
 
     encargados_que_evaluaron = {

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.models import Empleado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado
+from app.models import Empleado, EmpleadoEncargado, Encargado, Usuario, Evaluacion, Evaluacion_Encargado
 from app import db
 from collections import defaultdict
 from datetime import datetime, date
@@ -353,59 +353,64 @@ def obtener_encargados_por_periodo():
 
 @prom_bp.route('/evaluaciones/export-por-encargado', methods=['GET'])
 def exportar_evaluaciones_por_encargado():
-    """Servicio para extraer evaluaciones agrupadas por encargado con filtros de fecha (histórico)"""
+    """Servicio para extraer evaluaciones por encargado usando periodo y relación actual"""
     try:
-        # Obtener parámetros de filtro
-        periodo_tipo = request.args.get('periodo_tipo')  # 'mes', 'semana', 'año'
-        periodo_valor = request.args.get('periodo_valor')  # valor del período
-        
-        # Validar parámetros requeridos
-        if not periodo_tipo or not periodo_valor:
+        periodo_mes = request.args.get('periodo_mes', type=int)
+        periodo_anio = request.args.get('periodo_anio', type=int)
+        periodo_tipo = request.args.get('periodo_tipo')
+        periodo_valor = request.args.get('periodo_valor', type=int)
+        anio = request.args.get('anio', type=int)
+
+        if periodo_mes is None or periodo_anio is None:
+            if periodo_tipo == 'month' and periodo_valor is not None and anio is not None:
+                periodo_mes = periodo_valor
+                periodo_anio = anio
+            else:
+                return jsonify({
+                    'error': 'Se requieren los parámetros periodo_mes y periodo_anio, o bien periodo_tipo=month, periodo_valor y anio'
+                }), 400
+
+        if periodo_mes < 1 or periodo_mes > 12:
             return jsonify({
-                'error': 'Se requieren los parámetros periodo_tipo y periodo_valor'
-            }), 400
-            
-        # Validar tipo de período
-        if periodo_tipo not in ['month', 'week', 'year']:
-            return jsonify({
-                'error': 'periodo_tipo debe ser: month, week o year'
-            }), 400
-            
-        try:
-            periodo_valor = int(periodo_valor)
-        except ValueError:
-            return jsonify({
-                'error': 'periodo_valor debe ser un número entero'
+                'error': 'periodo_mes debe estar entre 1 y 12'
             }), 400
         
-        # Construir filtro de consulta según el tipo de período
-        # IMPORTANTE: Solo filtramos por fecha y ausente, NO por relación actual
-        if periodo_tipo == 'week':
-            evaluaciones = Evaluacion.query.filter(
-                Evaluacion.num_semana == periodo_valor,
-            ).all()
-        elif periodo_tipo == 'month':
-            evaluaciones = Evaluacion.query.filter(
-                db.extract('month', Evaluacion.fecha_evaluacion) == periodo_valor,
-            ).all()
-        elif periodo_tipo == 'year':
-            evaluaciones = Evaluacion.query.filter(
-                db.extract('year', Evaluacion.fecha_evaluacion) == periodo_valor,
-            ).all()
-        
-        if not evaluaciones:
+        relaciones_actuales = (
+            db.session.query(EmpleadoEncargado.encargado_id, EmpleadoEncargado.empleado_id)
+            .join(Encargado, Encargado.id == EmpleadoEncargado.encargado_id)
+            .filter(Encargado.activo == True)
+            .all()
+        )
+
+        if not relaciones_actuales:
             return jsonify({
-                'mensaje': f'No se encontraron evaluaciones para {periodo_tipo}: {periodo_valor}',
+                'mensaje': 'No hay relaciones activas entre encargados y empleados',
                 'datos': []
             }), 200
-        
-        # Obtener IDs únicos de encargados y empleados DESDE LAS EVALUACIONES HISTÓRICAS
-        encargado_ids = {eval.encargado_id for eval in evaluaciones}
-        empleado_ids = {eval.empleado_id for eval in evaluaciones}
-        
-        # Consultar información de encargados y empleados
-        # Incluir encargados que podrían estar inactivos pero que hicieron evaluaciones
-        encargados = Encargado.query.filter(Encargado.id.in_(encargado_ids)).all()
+
+        relaciones_actuales_set = {
+            (rel.encargado_id, rel.empleado_id) for rel in relaciones_actuales
+        }
+        encargado_ids = {rel.encargado_id for rel in relaciones_actuales}
+        empleado_ids = {rel.empleado_id for rel in relaciones_actuales}
+
+        evaluaciones = Evaluacion.query.filter(
+            Evaluacion.periodo_mes == periodo_mes,
+            Evaluacion.periodo_anio == periodo_anio,
+            Evaluacion.encargado_id.in_(encargado_ids),
+            Evaluacion.empleado_id.in_(empleado_ids)
+        ).all()
+
+        if not evaluaciones:
+            return jsonify({
+                'mensaje': f'No se encontraron evaluaciones para el periodo {periodo_mes}/{periodo_anio}',
+                'datos': []
+            }), 200
+
+        encargados = Encargado.query.filter(
+            Encargado.id.in_(encargado_ids),
+            Encargado.activo == True
+        ).all()
         empleados = Empleado.query.filter(Empleado.id.in_(empleado_ids)).all()
         
         # Crear diccionarios para acceso rápido
@@ -422,14 +427,13 @@ def exportar_evaluaciones_por_encargado():
             'activo': emp.activo
         } for emp in empleados}
         
-        # Agrupar evaluaciones por encargado QUE REALMENTE HIZO LA EVALUACIÓN
-        # y por empleado que fue evaluado EN ESE MOMENTO
         evaluaciones_agrupadas = defaultdict(lambda: defaultdict(list))
         for eval in evaluaciones:
-            # Usar el encargado_id de la evaluación (histórico)
-            encargado_historico = eval.encargado_id
-            empleado_evaluado = eval.empleado_id
-            evaluaciones_agrupadas[encargado_historico][empleado_evaluado].append(eval)
+            relacion_actual = (eval.encargado_id, eval.empleado_id)
+            if relacion_actual not in relaciones_actuales_set:
+                continue
+
+            evaluaciones_agrupadas[eval.encargado_id][eval.empleado_id].append(eval)
         
         # Procesar datos por encargado histórico
         resultados_finales = []
@@ -553,12 +557,12 @@ def exportar_evaluaciones_por_encargado():
         # Preparar respuesta final
         response_data = {
             'filtro_aplicado': {
-                'tipo': periodo_tipo,
-                'valor': periodo_valor
+                'periodo_mes': periodo_mes,
+                'periodo_anio': periodo_anio
             },
             'total_encargados': len(resultados_finales),
             'total_empleados_evaluados': sum(enc['total_empleados'] for enc in resultados_finales),
-            'nota': 'Este reporte muestra las evaluaciones históricas según quién realmente evaluó a cada empleado en el período especificado',
+            'nota': 'Este reporte muestra solo evaluaciones del periodo solicitado que siguen cumpliendo la relación actual entre empleado y encargado activo',
             'datos': resultados_finales
         }
         

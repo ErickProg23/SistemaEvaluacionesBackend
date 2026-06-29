@@ -259,6 +259,22 @@ class EvaluacionAtrasada(db.Model):
     activo = db.Column(db.Boolean, default=True)
     finalizada = db.Column(db.Boolean, default=False)
 
+    __table_args__ = (
+        db.UniqueConstraint(
+            'id_encargado',
+            'periodo_anio',
+            'periodo_mes',
+            name='uq_eval_atrasada_encargado_periodo'
+        ),
+        db.Index(
+            'idx_eval_atrasada_encargado_periodo',
+            'id_encargado',
+            'periodo_anio',
+            'periodo_mes',
+            'finalizada'
+        ),
+    )
+
     def __repr__(self):
         return f'<EvaluacionAtrasada ID: {self.id}, Encargado ID: {self.id_encargado}, Semana: {self.num_semana}, Periodo: {self.periodo_mes}/{self.periodo_anio}, Activo: {self.activo}, Finalizada: {self.finalizada}, Fecha Detectado: {self.fecha_detectado}>'
 
